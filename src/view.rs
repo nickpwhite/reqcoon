@@ -1,14 +1,10 @@
 use ratatui::{
-    layout::{Constraint, Direction, Layout},
-    style::{Color, Style},
-    text::{Text},
-    widgets::{Block, Borders, Paragraph},
-    Frame,
+    layout::{Constraint, Direction, Layout, Rect}, style::{Color, Modifier, Style}, symbols, text::Text, widgets::{Block, Borders, Clear, HighlightSpacing, List, ListItem, Paragraph, StatefulWidget}, Frame
 };
 
 use crate::model::{Model, CurrentPanel};
 
-pub fn view(f: &mut Frame, model: &Model) {
+pub fn view(f: &mut Frame, model: &mut Model) {
     // Create the layout sections.
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -21,7 +17,7 @@ pub fn view(f: &mut Frame, model: &Model) {
     let top_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Min(10),
+            Constraint::Max(10),
             Constraint::Min(1),
         ])
         .split(chunks[0]);
@@ -67,4 +63,48 @@ pub fn view(f: &mut Frame, model: &Model) {
     f.render_widget(url_text, top_chunks[1]);
     f.render_widget(output_text, chunks[1]);
     // f.set_cursor(model.current_cursor_position.x, model.current_cursor_position.y);
+    if model.current_panel == CurrentPanel::Method {
+        let border_set = symbols::border::Set {
+            top_left: symbols::line::VERTICAL_RIGHT,
+            top_right: symbols::line::VERTICAL_LEFT,
+            ..symbols::border::PLAIN
+        };
+        let block = Block::default().border_set(border_set).borders(Borders::ALL).border_style(active_style);
+        let items = [
+            ListItem::new("GET"),
+            ListItem::new("POST"),
+            ListItem::new("DELETE"),
+            ListItem::new("PUT"),
+            ListItem::new("PATCH")
+        ];
+
+        let list = List::new(items)
+            .block(block)
+            .highlight_style(
+                Style::default()
+                    .add_modifier(Modifier::BOLD)
+                    .add_modifier(Modifier::REVERSED)
+                    .fg(Color::Red),
+            )
+            .highlight_symbol(">")
+            .highlight_spacing(HighlightSpacing::Always);
+        let popup = method_selector(f.size());
+        f.render_widget(Clear, popup);
+        StatefulWidget::render(list, popup, f.buffer_mut(), &mut model.list_state);
+    }
+}
+
+fn method_selector(r: Rect) -> Rect {
+    let popup_layout = Layout::vertical([
+        Constraint::Max(2),
+        Constraint::Max(7),
+        Constraint::Min(1),
+    ])
+    .split(r);
+
+    Layout::horizontal([
+        Constraint::Max(10),
+        Constraint::Min(1),
+    ])
+    .split(popup_layout[1])[0]
 }

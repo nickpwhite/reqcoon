@@ -16,6 +16,10 @@ enum Message {
     NextPanel,
     PreviousPanel,
 
+    // Method input
+    NextMethod,
+    PreviousMethod,
+
     // URL input
     BackspaceUrlChar,
     TypeUrlChar(char),
@@ -33,7 +37,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut model = Model::new();
 
     while model.exit == false {
-        terminal.draw(|f| view(f, &model))?;
+        terminal.draw(|f| view(f, &mut model))?;
 
         let mut current_message = handle_event(&model);
 
@@ -64,8 +68,12 @@ fn handle_event(model: &Model) -> Option<Message> {
     } else {None}
 }
 
-fn handle_method_key(_key: event::KeyEvent) -> Option<Message> {
-    None
+fn handle_method_key(key: event::KeyEvent) -> Option<Message> {
+    match key.code {
+        KeyCode::Char('j') | KeyCode::Down => Some(Message::NextMethod),
+        KeyCode::Char('k') | KeyCode::Up => Some(Message::PreviousMethod),
+        _ => None,
+    }
 }
 
 fn handle_url_key(key: event::KeyEvent) -> Option<Message> {
@@ -104,6 +112,12 @@ fn update(model: &mut Model, msg: Message) -> Option<Message> {
         },
         Message::PreviousPanel => {
             model.previous_panel();
+        },
+        Message::NextMethod => {
+            model.next_method();
+        },
+        Message::PreviousMethod => {
+            model.previous_method();
         },
         Message::BackspaceUrlChar => {
             model.url_input.pop();

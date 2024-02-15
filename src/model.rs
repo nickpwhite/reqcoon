@@ -1,9 +1,11 @@
+use ratatui::widgets::ListState;
 use reqwest::{
     blocking::{Client, Request},
     Method,
     Url
 };
 
+#[derive(PartialEq)]
 pub enum CurrentPanel {
     Method,
     Url,
@@ -28,6 +30,7 @@ pub struct Model {
     pub current_panel: CurrentPanel,
     pub current_cursor_position: CursorPosition,
     pub method_input: Method,
+    pub list_state: ListState,
     pub url_input: String,
     pub output_text: String,
     pub exit: bool,
@@ -39,9 +42,10 @@ impl Model {
             current_panel: CurrentPanel::Method,
             current_cursor_position: CursorPosition::new(4, 1),
             method_input: Method::GET,
+            list_state: ListState::default().with_selected(Some(0)),
             url_input: String::new(),
             output_text: String::new(),
-            exit: false,
+            exit: false
         }
     }
 
@@ -59,6 +63,16 @@ impl Model {
             CurrentPanel::Url => self.current_panel = CurrentPanel::Method,
             CurrentPanel::Output => self.current_panel = CurrentPanel::Url,
         }
+    }
+
+    pub fn next_method(&mut self) {
+        let new_index = self.list_state.selected().unwrap_or(0) + 1;
+        self.list_state.select(Some(new_index));
+    }
+
+    pub fn previous_method(&mut self) {
+        let new_index = self.list_state.selected().unwrap_or(0) - 1;
+        self.list_state.select(Some(new_index));
     }
 
     pub fn submit_request(&mut self) {
