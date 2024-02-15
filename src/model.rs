@@ -12,23 +12,8 @@ pub enum CurrentPanel {
     Output,
 }
 
-pub struct CursorPosition {
-    pub x: u16,
-    pub y: u16,
-}
-
-impl CursorPosition {
-    pub fn new(x: u16, y: u16) -> CursorPosition {
-        CursorPosition {
-            x: x,
-            y: y,
-        }
-    }
-}
-
 pub struct Model {
     pub current_panel: CurrentPanel,
-    pub current_cursor_position: CursorPosition,
     pub method_input: Method,
     pub list_state: ListState,
     pub url_input: String,
@@ -40,7 +25,6 @@ impl Model {
     pub fn new() -> Model {
         Model {
             current_panel: CurrentPanel::Method,
-            current_cursor_position: CursorPosition::new(4, 1),
             method_input: Method::GET,
             list_state: ListState::default().with_selected(Some(0)),
             url_input: String::new(),

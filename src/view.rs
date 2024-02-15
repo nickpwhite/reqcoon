@@ -38,16 +38,28 @@ pub fn view(f: &mut Frame, model: &mut Model) {
         .style(Style::default());
 
     let active_style = Style::default().fg(Color::Blue);
+    let cursor_col;
+    let cursor_row;
 
     match model.current_panel {
         CurrentPanel::Method => {
-            method_block = method_block.border_style(active_style)
+            method_block = method_block.border_style(active_style);
+            cursor_col = 4;
+            cursor_row = 1;
         },
         CurrentPanel::Url => {
-            url_block = url_block.border_style(active_style)
+            url_block = url_block.border_style(active_style);
+            cursor_col = top_chunks[1].x + 1 + model.url_input.len() as u16;
+            cursor_row = 1;
         },
         CurrentPanel::Output => {
-            output_block = output_block.border_style(active_style)
+            output_block = output_block.border_style(active_style);
+            let output_lines = model.output_text.lines();
+            let (num_lines, last_line) = output_lines.fold((0, None), |(count, _), elem| {
+                (count + 1, Some(elem))
+            });
+            cursor_col = 1 + last_line.unwrap_or("").len() as u16;
+            cursor_row = chunks[1].y + num_lines;
         },
     };
 
@@ -62,7 +74,7 @@ pub fn view(f: &mut Frame, model: &mut Model) {
     f.render_widget(method_text, top_chunks[0]);
     f.render_widget(url_text, top_chunks[1]);
     f.render_widget(output_text, chunks[1]);
-    // f.set_cursor(model.current_cursor_position.x, model.current_cursor_position.y);
+
     if model.current_panel == CurrentPanel::Method {
         let border_set = symbols::border::Set {
             top_left: symbols::line::VERTICAL_RIGHT,
@@ -92,6 +104,8 @@ pub fn view(f: &mut Frame, model: &mut Model) {
         f.render_widget(Clear, popup);
         StatefulWidget::render(list, popup, f.buffer_mut(), &mut model.list_state);
     }
+
+    f.set_cursor(cursor_col, cursor_row);
 }
 
 fn method_selector(r: Rect) -> Rect {
