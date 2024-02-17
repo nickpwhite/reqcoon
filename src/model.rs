@@ -14,18 +14,24 @@ pub enum CurrentPanel {
 
 pub struct Model {
     pub current_panel: CurrentPanel,
-    pub method_input: Method,
     pub list_state: ListState,
     pub url_input: String,
     pub output_text: String,
     pub exit: bool,
 }
 
+pub const METHODS: [Method; 5] = [
+    Method::GET,
+    Method::HEAD,
+    Method::POST,
+    Method::PUT,
+    Method::DELETE,
+];
+
 impl Model {
     pub fn new() -> Model {
         Model {
             current_panel: CurrentPanel::Method,
-            method_input: Method::GET,
             list_state: ListState::default().with_selected(Some(0)),
             url_input: String::new(),
             output_text: String::new(),
@@ -50,19 +56,23 @@ impl Model {
     }
 
     pub fn next_method(&mut self) {
-        let new_index = self.list_state.selected().unwrap_or(0) + 1;
+        let new_index = (self.list_state.selected().unwrap_or(0) + 1) % METHODS.len();
         self.list_state.select(Some(new_index));
     }
 
     pub fn previous_method(&mut self) {
-        let new_index = self.list_state.selected().unwrap_or(0) - 1;
+        let new_index = self.list_state.selected().unwrap_or(0).checked_add_signed(-1).unwrap_or(METHODS.len() - 1);
         self.list_state.select(Some(new_index));
+    }
+
+    pub fn current_method(&self) -> &Method {
+        &METHODS[self.list_state.selected().unwrap_or(0)]
     }
 
     pub fn submit_request(&mut self) {
         let url = Url::parse(&self.url_input).expect("Invalid URL");
 
-        match Client::new().execute(Request::new(self.method_input.clone(), url)) {
+        match Client::new().execute(Request::new(self.current_method().clone(), url)) {
             Ok(response) => self.output_text = response.text().expect("Error unwrapping body"),
             Err(error) => self.output_text = format!("{:?}", error),
         };

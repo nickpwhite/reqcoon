@@ -1,8 +1,13 @@
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect}, style::{Color, Modifier, Style}, symbols, text::Text, widgets::{Block, Borders, Clear, HighlightSpacing, List, ListItem, Paragraph, StatefulWidget}, Frame
+    Frame,
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Color, Modifier, Style},
+    symbols,
+    text::Text,
+    widgets::{Block, Borders, Clear, HighlightSpacing, List, Paragraph, StatefulWidget, Wrap},
 };
 
-use crate::model::{Model, CurrentPanel};
+use crate::model::{Model, CurrentPanel, METHODS};
 
 pub fn view(f: &mut Frame, model: &mut Model) {
     // Create the layout sections.
@@ -44,7 +49,7 @@ pub fn view(f: &mut Frame, model: &mut Model) {
     match model.current_panel {
         CurrentPanel::Method => {
             method_block = method_block.border_style(active_style);
-            cursor_col = 4;
+            cursor_col = 1 + model.current_method().to_string().len() as u16;
             cursor_row = 1;
         },
         CurrentPanel::Url => {
@@ -64,12 +69,12 @@ pub fn view(f: &mut Frame, model: &mut Model) {
     };
 
     let method_text = Paragraph::new(Text::styled(
-        model.method_input.to_string().clone(),
+        model.current_method().to_string().clone(),
         Style::default().fg(Color::Green),
     ))
     .block(method_block);
     let url_text = Paragraph::new(model.url_input.clone()).block(url_block);
-    let output_text = Paragraph::new(model.output_text.clone()).block(output_block);
+    let output_text = Paragraph::new(model.output_text.clone()).wrap(Wrap { trim: false }).block(output_block);
 
     f.render_widget(method_text, top_chunks[0]);
     f.render_widget(url_text, top_chunks[1]);
@@ -82,14 +87,8 @@ pub fn view(f: &mut Frame, model: &mut Model) {
             ..symbols::border::PLAIN
         };
         let block = Block::default().border_set(border_set).borders(Borders::ALL).border_style(active_style);
-        let items = [
-            ListItem::new("GET"),
-            ListItem::new("POST"),
-            ListItem::new("DELETE"),
-            ListItem::new("PUT"),
-            ListItem::new("PATCH")
-        ];
 
+        let items = METHODS.map(|method| {String::from(method.as_str())});
         let list = List::new(items)
             .block(block)
             .highlight_style(
