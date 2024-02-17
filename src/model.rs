@@ -9,11 +9,14 @@ use reqwest::{
 pub enum CurrentPanel {
     Method,
     Url,
+    Body,
     Output,
 }
 
 pub struct Model {
     pub current_panel: CurrentPanel,
+    pub cursor_col: u16,
+    pub cursor_row: u16,
     pub list_state: ListState,
     pub url_input: String,
     pub output_text: String,
@@ -32,6 +35,8 @@ impl Model {
     pub fn new() -> Model {
         Model {
             current_panel: CurrentPanel::Method,
+            cursor_col: 0,
+            cursor_row: 0,
             list_state: ListState::default().with_selected(Some(0)),
             url_input: String::new(),
             output_text: String::new(),
@@ -42,16 +47,23 @@ impl Model {
     pub fn next_panel(&mut self) {
         match self.current_panel {
             CurrentPanel::Method => self.current_panel = CurrentPanel::Url,
-            CurrentPanel::Url => self.current_panel = CurrentPanel::Output,
+            CurrentPanel::Url => self.current_panel = CurrentPanel::Body,
+            CurrentPanel::Body => self.current_panel = CurrentPanel::Output,
             CurrentPanel::Output => self.current_panel = CurrentPanel::Method,
         }
+    }
+
+    pub fn set_cursor(&mut self, column: u16, row: u16) {
+        self.cursor_col = column;
+        self.cursor_row = row;
     }
 
     pub fn previous_panel(&mut self) {
         match self.current_panel {
             CurrentPanel::Method => self.current_panel = CurrentPanel::Output,
             CurrentPanel::Url => self.current_panel = CurrentPanel::Method,
-            CurrentPanel::Output => self.current_panel = CurrentPanel::Url,
+            CurrentPanel::Body => self.current_panel = CurrentPanel::Url,
+            CurrentPanel::Output => self.current_panel = CurrentPanel::Body,
         }
     }
 

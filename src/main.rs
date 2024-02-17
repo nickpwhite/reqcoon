@@ -57,6 +57,7 @@ fn handle_event(model: &Model) -> Option<Message> {
                 let panel_specific_handler = match model.current_panel {
                     CurrentPanel::Method => handle_method_key,
                     CurrentPanel::Url => handle_url_key,
+                    CurrentPanel::Body => handle_body_key,
                     CurrentPanel::Output => handle_output_key,
                 };
 
@@ -83,6 +84,10 @@ fn handle_url_key(key: event::KeyEvent) -> Option<Message> {
         KeyCode::Enter => Some(Message::SubmitRequest),
         _ => None
     }
+}
+
+fn handle_body_key(_key: event::KeyEvent) -> Option<Message> {
+    None
 }
 
 fn handle_output_key(_key: event::KeyEvent) -> Option<Message> {

@@ -14,7 +14,8 @@ pub fn view(f: &mut Frame, model: &mut Model) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Max(3),
+            Constraint::Length(3),
+            Constraint::Max(10),
             Constraint::Min(1),
         ])
         .split(f.size());
@@ -37,25 +38,30 @@ pub fn view(f: &mut Frame, model: &mut Model) {
         .borders(Borders::ALL)
         .style(Style::default());
 
+    let mut body_block = Block::default()
+        .title("Body")
+        .borders(Borders::ALL)
+        .style(Style::default());
+
     let mut output_block = Block::default()
         .title("Output")
         .borders(Borders::ALL)
         .style(Style::default());
 
     let active_style = Style::default().fg(Color::Blue);
-    let cursor_col;
-    let cursor_row;
 
     match model.current_panel {
         CurrentPanel::Method => {
             method_block = method_block.border_style(active_style);
-            cursor_col = 1 + model.current_method().to_string().len() as u16;
-            cursor_row = 1;
+            model.set_cursor(1 + model.current_method().to_string().len() as u16, 1)
         },
         CurrentPanel::Url => {
             url_block = url_block.border_style(active_style);
-            cursor_col = top_chunks[1].x + 1 + model.url_input.len() as u16;
-            cursor_row = 1;
+            model.set_cursor(top_chunks[1].x + 1 + model.url_input.len() as u16, 1)
+        },
+        CurrentPanel::Body => {
+            body_block = body_block.border_style(active_style);
+            model.set_cursor(3, chunks[1].y + 1);
         },
         CurrentPanel::Output => {
             output_block = output_block.border_style(active_style);
@@ -63,8 +69,7 @@ pub fn view(f: &mut Frame, model: &mut Model) {
             let (num_lines, last_line) = output_lines.fold((0, None), |(count, _), elem| {
                 (count + 1, Some(elem))
             });
-            cursor_col = 1 + last_line.unwrap_or("").len() as u16;
-            cursor_row = chunks[1].y + num_lines;
+            model.set_cursor(1 + last_line.unwrap_or("").len() as u16, chunks[2].y + num_lines + 1);
         },
     };
 
@@ -74,11 +79,13 @@ pub fn view(f: &mut Frame, model: &mut Model) {
     ))
     .block(method_block);
     let url_text = Paragraph::new(model.url_input.clone()).block(url_block);
+    let body_text = Paragraph::new("{}").block(body_block);
     let output_text = Paragraph::new(model.output_text.clone()).wrap(Wrap { trim: false }).block(output_block);
 
     f.render_widget(method_text, top_chunks[0]);
     f.render_widget(url_text, top_chunks[1]);
-    f.render_widget(output_text, chunks[1]);
+    f.render_widget(body_text, chunks[1]);
+    f.render_widget(output_text, chunks[2]);
 
     if model.current_panel == CurrentPanel::Method {
         let border_set = symbols::border::Set {
@@ -104,7 +111,7 @@ pub fn view(f: &mut Frame, model: &mut Model) {
         StatefulWidget::render(list, popup, f.buffer_mut(), &mut model.list_state);
     }
 
-    f.set_cursor(cursor_col, cursor_row);
+    f.set_cursor(model.cursor_col, model.cursor_row);
 }
 
 fn method_selector(r: Rect) -> Rect {
