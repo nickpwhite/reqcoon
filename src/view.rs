@@ -1,13 +1,13 @@
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Color, Modifier, Style, Stylize},
     symbols,
-    text::Text,
-    widgets::{Block, Borders, Clear, HighlightSpacing, List, Paragraph, StatefulWidget, Wrap},
+    text::{Line, Span, Text},
+    widgets::{Block, Borders, Clear, HighlightSpacing, List, Paragraph, Row, StatefulWidget, Table, Wrap},
 };
 
-use crate::model::{Model, CurrentPanel, METHODS};
+use crate::model::{Model, CurrentInputType, CurrentPanel, METHODS};
 
 pub fn view(f: &mut Frame, model: &mut Model) {
     // Create the layout sections.
@@ -15,8 +15,8 @@ pub fn view(f: &mut Frame, model: &mut Model) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3),
-            Constraint::Max(10),
-            Constraint::Min(1),
+            Constraint::Percentage(50),
+            Constraint::Percentage(50),
         ])
         .split(f.size());
 
@@ -38,10 +38,9 @@ pub fn view(f: &mut Frame, model: &mut Model) {
         .borders(Borders::ALL)
         .style(Style::default());
 
-    let mut body_block = Block::default()
-        .title("Body")
-        .borders(Borders::ALL)
-        .style(Style::default());
+    let mut input_block = Block::default()
+        .title(input_title(model))
+        .borders(Borders::ALL);
 
     let mut output_block = Block::default()
         .title("Output")
@@ -57,11 +56,11 @@ pub fn view(f: &mut Frame, model: &mut Model) {
         },
         CurrentPanel::Url => {
             url_block = url_block.border_style(active_style);
-            model.set_cursor(top_chunks[1].x + 1 + model.url_input.len() as u16, 1)
+            model.set_cursor(top_chunks[1].x + 1 + model.url_input.visual_cursor() as u16, 1);
         },
-        CurrentPanel::Body => {
-            body_block = body_block.border_style(active_style);
-            model.set_cursor(3, chunks[1].y + 1);
+        CurrentPanel::Input => {
+            input_block = input_block.border_style(active_style);
+            model.set_cursor(1 + model.body_input.visual_cursor() as u16, chunks[1].y + 1);
         },
         CurrentPanel::Output => {
             output_block = output_block.border_style(active_style);
@@ -78,13 +77,17 @@ pub fn view(f: &mut Frame, model: &mut Model) {
         Style::default().fg(Color::Green),
     ))
     .block(method_block);
-    let url_text = Paragraph::new(model.url_input.clone()).block(url_block);
-    let body_text = Paragraph::new("{}").block(body_block);
+    let url_input = Paragraph::new(model.url_input.value()).block(url_block);
+    let input_table = Table::default()
+        .style(Style::new().white())
+        .rows([Row::new(vec![model.current_header_key.value(), model.current_header_value.value()])])
+        .header(Row::new(vec!["Name", "Value"]))
+        .block(input_block);
     let output_text = Paragraph::new(model.output_text.clone()).wrap(Wrap { trim: false }).block(output_block);
 
     f.render_widget(method_text, top_chunks[0]);
-    f.render_widget(url_text, top_chunks[1]);
-    f.render_widget(body_text, chunks[1]);
+    f.render_widget(url_input, top_chunks[1]);
+    f.render_widget(input_table, chunks[1]);
     f.render_widget(output_text, chunks[2]);
 
     if model.current_panel == CurrentPanel::Method {
@@ -112,6 +115,29 @@ pub fn view(f: &mut Frame, model: &mut Model) {
     }
 
     f.set_cursor(model.cursor_col, model.cursor_row);
+}
+
+fn input_title(model: &mut Model) -> Line<'static> {
+    let mut headers_title = CurrentInputType::Headers.to_string().white();
+    let mut auth_title = CurrentInputType::Auth.to_string().white();
+    let mut body_title = CurrentInputType::Body.to_string().white();
+    if model.current_panel == CurrentPanel::Input {
+        match model.current_input_type {
+            CurrentInputType::Headers => headers_title = headers_title.blue(),
+            CurrentInputType::Auth => auth_title = auth_title.blue(),
+            CurrentInputType::Body => body_title = body_title.blue(),
+        };
+    }
+
+    Line::default().spans(vec![
+        Span::styled("| ", Color::White),
+        headers_title,
+        Span::styled(" | ", Color::White),
+        auth_title,
+        Span::styled(" | ", Color::White),
+        body_title,
+        Span::styled(" |", Color::White),
+    ])
 }
 
 fn method_selector(r: Rect) -> Rect {

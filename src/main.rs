@@ -1,6 +1,7 @@
 use std::{error::Error, time::Duration};
 
-use crossterm::event::{self, Event, KeyCode};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use tui_input::backend::crossterm::EventHandler;
 
 mod model;
 mod tui;
@@ -20,9 +21,12 @@ enum Message {
     NextMethod,
     PreviousMethod,
 
-    // URL input
-    BackspaceUrlChar,
-    TypeUrlChar(char),
+    // Text input
+    InputEvent(KeyEvent),
+
+    // Input section
+    NextInputType,
+    PreviousInputType,
 
     // Submission
     SubmitRequest,
@@ -53,11 +57,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 fn handle_event(model: &Model) -> Option<Message> {
     if event::poll(Duration::from_millis(250)).expect("Unable to poll events") {
         if let Ok(Event::Key(key)) = event::read() {
-            if key.kind == event::KeyEventKind::Press {
+            if key.kind == KeyEventKind::Press {
                 let panel_specific_handler = match model.current_panel {
                     CurrentPanel::Method => handle_method_key,
                     CurrentPanel::Url => handle_url_key,
-                    CurrentPanel::Body => handle_body_key,
+                    CurrentPanel::Input => handle_input_key,
                     CurrentPanel::Output => handle_output_key,
                 };
 
@@ -69,7 +73,7 @@ fn handle_event(model: &Model) -> Option<Message> {
     } else {None}
 }
 
-fn handle_method_key(key: event::KeyEvent) -> Option<Message> {
+fn handle_method_key(key: KeyEvent) -> Option<Message> {
     match key.code {
         KeyCode::Char('j') | KeyCode::Down => Some(Message::NextMethod),
         KeyCode::Char('k') | KeyCode::Up => Some(Message::PreviousMethod),
@@ -77,37 +81,41 @@ fn handle_method_key(key: event::KeyEvent) -> Option<Message> {
     }
 }
 
-fn handle_url_key(key: event::KeyEvent) -> Option<Message> {
+fn handle_url_key(key: KeyEvent) -> Option<Message> {
     match key.code {
-        KeyCode::Char(c) => Some(Message::TypeUrlChar(c)),
-        KeyCode::Backspace => Some(Message::BackspaceUrlChar),
         KeyCode::Enter => Some(Message::SubmitRequest),
-        _ => None
+        _ => Some(Message::InputEvent(key))
     }
 }
 
-fn handle_body_key(_key: event::KeyEvent) -> Option<Message> {
-    None
-}
-
-fn handle_output_key(_key: event::KeyEvent) -> Option<Message> {
-    None
-}
-
-fn globally_pre_handle_key(key: event::KeyEvent) -> Option<Message> {
-    // eprintln!("{:?}", key);
-    match key.code {
-        KeyCode::Tab => Some(Message::NextPanel),
-        KeyCode::BackTab => Some(Message::PreviousPanel),
+fn handle_input_key(key: KeyEvent) -> Option<Message> {
+    match key.modifiers {
+        KeyModifiers::SHIFT => match key.code {
+            KeyCode::Right => Some(Message::NextInputType),
+            KeyCode::Left => Some(Message::PreviousInputType),
+            _ => None,
+        },
         _ => None,
     }
 }
 
-fn globally_post_handle_key(key: event::KeyEvent) -> Option<Message> {
-    match key.code {
-        KeyCode::Char('q') => Some(Message::Quit),
-        _ => None,
+fn handle_output_key(_key: KeyEvent) -> Option<Message> {
+    None
+}
+
+fn globally_pre_handle_key(key: KeyEvent) -> Option<Message> {
+    match key.modifiers {
+        KeyModifiers::CONTROL => Some(Message::Quit),
+        _ => match key.code {
+            KeyCode::Tab => Some(Message::NextPanel),
+            KeyCode::BackTab => Some(Message::PreviousPanel),
+            _ => None,
+        },
     }
+}
+
+fn globally_post_handle_key(_key: KeyEvent) -> Option<Message> {
+    None
 }
 
 fn update(model: &mut Model, msg: Message) -> Option<Message> {
@@ -118,17 +126,20 @@ fn update(model: &mut Model, msg: Message) -> Option<Message> {
         Message::PreviousPanel => {
             model.previous_panel();
         },
+        Message::NextInputType => {
+            model.next_input_type();
+        },
+        Message::PreviousInputType => {
+            model.previous_input_type();
+        },
         Message::NextMethod => {
             model.next_method();
         },
         Message::PreviousMethod => {
             model.previous_method();
         },
-        Message::BackspaceUrlChar => {
-            model.url_input.pop();
-        },
-        Message::TypeUrlChar(value) => {
-            model.url_input.push(value);
+        Message::InputEvent(key) => {
+            model.url_input.handle_event(&Event::Key(key));
         },
         Message::SubmitRequest => {
             model.submit_request();
