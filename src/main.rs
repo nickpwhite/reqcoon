@@ -2,10 +2,15 @@ use std::{error::Error, time::Duration};
 
 use crossterm::event::{self, Event, KeyCode};
 
+mod component;
 mod model;
 mod tui;
 mod view;
 use crate::{
+    component::{
+        app::App,
+        Component,
+    },
     model::{Model, CurrentPanel},
     view::view,
 };
@@ -34,20 +39,26 @@ fn main() -> Result<(), Box<dyn Error>> {
     // setup terminal
     tui::install_panic_hook();
     let mut terminal = tui::init_terminal();
-    let mut model = Model::new();
+    let mut app = App::default();
 
-    while model.exit == false {
-        terminal.draw(|f| view(f, &mut model))?;
+    while app.exit == false {
+        terminal.draw(|f| f.render_widget(&app, f.size()))?;
 
-        let mut current_message = handle_event(&model);
-
-        while current_message.is_some() {
-            current_message = update(&mut model, current_message.unwrap());
-        }
+        app = app.handle_event(get_event());
     }
 
     tui::restore_terminal();
     Ok(())
+}
+
+fn get_event() -> Option<Event> {
+    if event::poll(Duration::from_millis(250)).expect("Unable to poll events") {
+        if let Ok(event) = event::read() {
+            return Some(event);
+        }
+    };
+
+    None
 }
 
 fn handle_event(model: &Model) -> Option<Message> {
