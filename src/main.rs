@@ -6,7 +6,7 @@ mod model;
 mod tui;
 mod view;
 use crate::{
-    model::{CurrentPanel, Model},
+    model::{CurrentInputField, CurrentPanel, Model},
     view::view,
 };
 
@@ -22,6 +22,13 @@ enum Message {
 
     // URL input
     UrlInput(Event),
+
+    // Input input
+    NextInputType,
+    PreviousInputType,
+    FocusKeyInput,
+    FocusValueInput,
+    InputInput(Event),
 
     // Submission
     SubmitRequest,
@@ -99,41 +106,44 @@ fn handle_url_key(key: event::KeyEvent) -> Option<Message> {
     }
 }
 
-fn handle_input_key(_key: event::KeyEvent) -> Option<Message> {
-    None
+fn handle_input_key(key: event::KeyEvent) -> Option<Message> {
+    match key.modifiers {
+        KeyModifiers::CONTROL => match key.code {
+            KeyCode::Char('y') => Some(Message::FocusKeyInput),
+            KeyCode::Char('v') => Some(Message::FocusValueInput),
+            _ => None,
+        },
+        KeyModifiers::SHIFT => match key.code {
+            KeyCode::Right => Some(Message::NextInputType),
+            KeyCode::Left => Some(Message::PreviousInputType),
+            _ => Some(Message::InputInput(Event::Key(key))),
+        },
+        _ => Some(Message::InputInput(Event::Key(key))),
+    }
 }
 
 fn handle_output_key(_key: event::KeyEvent) -> Option<Message> {
     None
 }
 
-fn globally_post_handle_key(key: event::KeyEvent) -> Option<Message> {
+fn globally_post_handle_key(_key: event::KeyEvent) -> Option<Message> {
     None
 }
 
 fn update(model: &mut Model, msg: Message) -> Option<Message> {
     match msg {
-        Message::NextPanel => {
-            model.next_panel();
-        },
-        Message::PreviousPanel => {
-            model.previous_panel();
-        },
-        Message::NextMethod => {
-            model.next_method();
-        },
-        Message::PreviousMethod => {
-            model.previous_method();
-        },
-        Message::UrlInput(event) => {
-            model.handle_url_input(event);
-        },
-        Message::SubmitRequest => {
-            model.submit_request();
-        },
-        Message::Quit => {
-            model.exit = true;
-        },
+        Message::NextPanel => model.next_panel(),
+        Message::PreviousPanel => model.previous_panel(),
+        Message::NextMethod => model.next_method(),
+        Message::PreviousMethod => model.previous_method(),
+        Message::UrlInput(event) => model.handle_url_input(event),
+        Message::NextInputType => model.next_input_type(),
+        Message::PreviousInputType => model.previous_input_type(),
+        Message::FocusKeyInput => model.focus_input_field(CurrentInputField::Key),
+        Message::FocusValueInput => model.focus_input_field(CurrentInputField::Value),
+        Message::InputInput(event) => model.handle_input_input(event),
+        Message::SubmitRequest => model.submit_request(),
+        Message::Quit => model.exit = true,
     };
     None
 }

@@ -1,13 +1,16 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout},
-    style::{Color, Modifier, Style},
+    style::{Color, Modifier, Style, Stylize},
     symbols,
-    text::Text,
-    widgets::{Block, Borders, Clear, HighlightSpacing, List, Paragraph, StatefulWidget, Wrap},
+    text::{Line, Span, Text},
+    widgets::{
+        Block, Borders, Clear, HighlightSpacing, List, Padding, Paragraph, Row, StatefulWidget,
+        Table, Wrap,
+    },
     Frame,
 };
 
-use crate::model::{CurrentPanel, Model, METHODS};
+use crate::model::{CurrentInputField, CurrentInputType, CurrentPanel, Model, METHODS};
 
 pub fn view(f: &mut Frame, model: &mut Model) {
     // Create the layout sections.
@@ -15,8 +18,8 @@ pub fn view(f: &mut Frame, model: &mut Model) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3),
-            Constraint::Max(10),
-            Constraint::Min(1),
+            Constraint::Percentage(50),
+            Constraint::Percentage(50),
         ])
         .areas(f.size());
 
@@ -47,9 +50,12 @@ pub fn view(f: &mut Frame, model: &mut Model) {
     }
 
     let (col_offset, row_offset) = match model.current_panel {
-        CurrentPanel::Method => (0, 0),
-        CurrentPanel::Url => (url_section.x, 0),
-        CurrentPanel::Input => (0, input_section.y),
+        CurrentPanel::Method => (1, 1),
+        CurrentPanel::Url => (url_section.x + 1, 1),
+        CurrentPanel::Input => match model.current_input_field {
+            CurrentInputField::Key => (3, input_section.y + 4),
+            CurrentInputField::Value => (input_section.width / 2 + 1, input_section.y + 4),
+        },
         CurrentPanel::Output => (0, output_section.y),
     };
 
@@ -119,7 +125,7 @@ fn url_block(model: &Model) -> Paragraph {
     Paragraph::new(model.url_input.value()).block(url_block)
 }
 
-fn input_block(model: &Model) -> Paragraph {
+fn input_block(model: &Model) -> Table {
     let style = if model.current_panel == CurrentPanel::Input {
         active_style()
     } else {
@@ -127,11 +133,45 @@ fn input_block(model: &Model) -> Paragraph {
     };
 
     let input_block = Block::default()
-        .title("Body")
+        .title(input_title(model))
         .borders(Borders::ALL)
-        .border_style(style);
+        .border_style(style)
+        .padding(Padding::proportional(1));
 
-    Paragraph::new("{}").block(input_block)
+    let input_to_use = match model.current_input_type {
+        CurrentInputType::Headers => &model.headers_input,
+        CurrentInputType::Body => &model.body_input,
+    };
+
+    let rows = input_to_use
+        .iter()
+        .map(|(key, value)| Row::new(vec![key.value(), value.value()]));
+
+    Table::new(
+        rows,
+        [Constraint::Percentage(50), Constraint::Percentage(50)],
+    )
+    .block(input_block)
+    .header(Row::new(vec!["Key", "Value"]).bottom_margin(1))
+}
+
+fn input_title(model: &Model) -> Line<'static> {
+    let mut headers_title = CurrentInputType::Headers.to_string().white();
+    let mut body_title = CurrentInputType::Body.to_string().white();
+    if model.current_panel == CurrentPanel::Input {
+        match model.current_input_type {
+            CurrentInputType::Headers => headers_title = headers_title.blue(),
+            CurrentInputType::Body => body_title = body_title.blue(),
+        };
+    }
+
+    Line::default().spans(vec![
+        Span::styled("| ", Color::White),
+        headers_title,
+        Span::styled(" | ", Color::White),
+        body_title,
+        Span::styled(" |", Color::White),
+    ])
 }
 
 fn output_block(model: &Model) -> Paragraph {
