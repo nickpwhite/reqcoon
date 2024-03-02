@@ -4,7 +4,7 @@ use crossterm::event::Event;
 use enum_iterator::Sequence;
 use json::object;
 use nonempty::{nonempty, NonEmpty};
-use ratatui::widgets::{ListState};
+use ratatui::widgets::ListState;
 use reqwest::{blocking::Client, Method, Url};
 use tui_input::{backend::crossterm::EventHandler, Input};
 

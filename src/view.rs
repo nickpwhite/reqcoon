@@ -41,11 +41,7 @@ pub fn view(f: &mut Frame, model: &mut Model) {
     f.render_widget(statusbar_block(model), statusbar_section);
 
     let mut table_state = TableState::default().with_selected(model.input_index);
-    f.render_stateful_widget(
-        input_block(model),
-        input_section,
-        &mut table_state,
-    );
+    f.render_stateful_widget(input_block(model), input_section, &mut table_state);
 
     if model.current_panel == Panel::Method && model.current_mode == Mode::Insert {
         f.render_widget(Clear, method_selector_section);
@@ -66,7 +62,7 @@ pub fn view(f: &mut Frame, model: &mut Model) {
                 InputField::Value => input_section.width / 2 + 1,
             };
             (col, input_section.y + 4 - (table_state.offset() as u16))
-        },
+        }
         Panel::Output => (0, output_section.y),
     };
 
