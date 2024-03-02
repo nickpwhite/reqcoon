@@ -1,4 +1,5 @@
 use crossterm::{
+    cursor::SetCursorStyle,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
 };
@@ -24,4 +25,12 @@ pub fn install_panic_hook() {
         disable_raw_mode().unwrap();
         original_hook(panic_info);
     }));
+}
+
+pub fn set_cursor_block() {
+    stdout().execute(SetCursorStyle::BlinkingBlock).unwrap();
+}
+
+pub fn set_cursor_bar() {
+    stdout().execute(SetCursorStyle::BlinkingBar).unwrap();
 }
