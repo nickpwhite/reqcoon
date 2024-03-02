@@ -1,19 +1,29 @@
-use std::fmt;
+use std::{fmt, vec};
 
 use crossterm::event::Event;
 use enum_iterator::Sequence;
 use json::object;
-use ratatui::widgets::ListState;
+use nonempty::{nonempty, NonEmpty};
+use ratatui::widgets::{ListState};
 use reqwest::{blocking::Client, Method, Url};
 use tui_input::{backend::crossterm::EventHandler, Input};
 
-use crate::tmux::{Direction, select_tmux_panel};
+use crate::tmux::{select_tmux_panel, Direction};
 
 #[derive(Default, PartialEq)]
 pub enum Mode {
     #[default]
     Normal,
-    Insert
+    Insert,
+}
+
+impl fmt::Display for Mode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Mode::Normal => write!(f, "Normal"),
+            Mode::Insert => write!(f, "Insert"),
+        }
+    }
 }
 
 #[derive(Default, PartialEq, Sequence)]
@@ -48,14 +58,38 @@ pub enum InputField {
     Value,
 }
 
-impl InputField {
-    fn index(&self) -> usize {
-        match self {
-            InputField::Key => 0,
-            InputField::Value => 1,
-        }
+#[derive(Default)]
+pub struct InputRow {
+    key: Input,
+    value: Input,
+}
+
+impl InputRow {
+    fn is_empty(&self) -> bool {
+        self.key.value().is_empty() && self.value.value().is_empty()
     }
 }
+
+impl IntoIterator for &InputRow {
+    type Item = String;
+    type IntoIter = vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        vec![
+            String::from(self.key.value()),
+            String::from(self.value.value()),
+        ]
+        .into_iter()
+    }
+}
+
+pub const METHODS: [Method; 5] = [
+    Method::GET,
+    Method::HEAD,
+    Method::POST,
+    Method::PUT,
+    Method::DELETE,
+];
 
 pub struct Model {
     pub cursor_col: u16,
@@ -67,19 +101,11 @@ pub struct Model {
     pub current_input_type: InputType,
     pub current_input_field: InputField,
     pub input_index: usize,
-    pub headers_input: Vec<[Input; 2]>,
-    pub body_input: Vec<[Input; 2]>,
+    pub headers_input_table: NonEmpty<InputRow>,
+    pub body_input_table: NonEmpty<InputRow>,
     pub output_text: String,
     pub exit: bool,
 }
-
-pub const METHODS: [Method; 5] = [
-    Method::GET,
-    Method::HEAD,
-    Method::POST,
-    Method::PUT,
-    Method::DELETE,
-];
 
 impl Model {
     pub fn new() -> Model {
@@ -93,8 +119,8 @@ impl Model {
             current_input_type: InputType::default(),
             current_input_field: InputField::Key,
             input_index: 0,
-            headers_input: vec![[Input::default(), Input::default()]],
-            body_input: vec![[Input::default(), Input::default()]],
+            headers_input_table: nonempty![InputRow::default()],
+            body_input_table: nonempty![InputRow::default()],
             output_text: String::new(),
             exit: false,
         }
@@ -106,8 +132,7 @@ impl Model {
             Panel::Url => self.set_cursor(self.url_input.visual_cursor() as u16, 0),
             Panel::Input => {
                 self.set_cursor(
-                    self.current_input()[self.input_index][self.current_input_field.index()]
-                        .visual_cursor() as u16,
+                    self.current_input().visual_cursor() as u16,
                     self.input_index as u16,
                 );
             }
@@ -139,7 +164,7 @@ impl Model {
             Panel::Url => {
                 self.current_panel = Panel::Method;
                 self.update_cursor();
-            },
+            }
             _ => select_tmux_panel(Direction::Left),
         };
     }
@@ -149,11 +174,11 @@ impl Model {
             Panel::Url | Panel::Method => {
                 self.current_panel = Panel::Input;
                 self.update_cursor();
-            },
+            }
             Panel::Input => {
                 self.current_panel = Panel::Output;
                 self.update_cursor();
-            },
+            }
             _ => select_tmux_panel(Direction::Down),
         };
     }
@@ -163,11 +188,11 @@ impl Model {
             Panel::Output => {
                 self.current_panel = Panel::Input;
                 self.update_cursor();
-            },
+            }
             Panel::Input => {
                 self.current_panel = Panel::Url;
                 self.update_cursor();
-            },
+            }
             _ => select_tmux_panel(Direction::Up),
         };
     }
@@ -177,7 +202,7 @@ impl Model {
             Panel::Method => {
                 self.current_panel = Panel::Url;
                 self.update_cursor();
-            },
+            }
             _ => select_tmux_panel(Direction::Right),
         };
     }
@@ -211,6 +236,7 @@ impl Model {
     pub fn next_input_type(&mut self) {
         self.current_input_type = self.current_input_type.next().unwrap_or_default();
         self.current_input_field = InputField::default();
+        self.input_index = self.current_input_table().len() - 1;
         self.update_cursor();
     }
 
@@ -220,23 +246,17 @@ impl Model {
             .previous()
             .unwrap_or(InputType::last().unwrap());
         self.current_input_field = InputField::default();
+        self.input_index = self.current_input_table().len() - 1;
         self.update_cursor();
     }
 
     pub fn next_input_field(&mut self) {
         if self.current_input_field == InputField::last().unwrap() {
-            if self
-                .current_input()
-                .last()
-                .unwrap()
-                .into_iter()
-                .any(|input| !input.value().is_empty())
-            {
-                self.current_input_mut()
-                    .push([Input::default(), Input::default()]);
+            if !self.current_input_table().last().is_empty() {
+                self.current_input_table_mut().push(InputRow::default());
             }
-            if self.input_index < self.current_input().len() - 1 {
-                self.input_index += 1;
+            if self.input_index < self.current_input_table().len() - 1 {
+                self.input_index += 1
             }
         }
         self.current_input_field = self.current_input_field.next().unwrap_or_default();
@@ -246,7 +266,7 @@ impl Model {
     pub fn previous_input_field(&mut self) {
         if self.current_input_field == InputField::first().unwrap() {
             if self.input_index == 0 {
-                self.input_index = self.current_input().len() - 1;
+                self.input_index = self.current_input_table().len() - 1;
             } else {
                 self.input_index -= 1;
             }
@@ -255,13 +275,11 @@ impl Model {
             .current_input_field
             .previous()
             .unwrap_or(InputField::last().unwrap());
-            self.update_cursor();
+        self.update_cursor();
     }
 
     pub fn handle_input_input(&mut self, event: Event) {
-        let index = self.input_index;
-        let field_index = self.current_input_field.index();
-        self.current_input_mut()[index][field_index].handle_event(&event);
+        self.current_input_mut().handle_event(&event);
         self.update_cursor();
     }
 
@@ -270,10 +288,10 @@ impl Model {
         let mut request_builder = Client::new().request(self.current_method().clone(), url);
 
         request_builder = self
-            .headers_input
+            .headers_input_table
             .iter()
-            .filter(|[key, value]| !(key.value().is_empty() && value.value().is_empty()))
-            .fold(request_builder, |builder, [key, value]| {
+            .filter(|header| !header.key.value().is_empty())
+            .fold(request_builder, |builder, InputRow { key, value }| {
                 builder.header(key.value(), value.value())
             });
         request_builder = request_builder.body(self.body_string());
@@ -284,30 +302,53 @@ impl Model {
         };
     }
 
-    pub fn current_input(&self) -> &Vec<[Input; 2]> {
-        match self.current_input_type {
-            InputType::Headers => &self.headers_input,
-            InputType::Body => &self.body_input,
-        }
-    }
-
     fn set_cursor(&mut self, column: u16, row: u16) {
         self.cursor_col = column;
         self.cursor_row = row;
     }
 
-    fn current_input_mut(&mut self) -> &mut Vec<[Input; 2]> {
+    pub fn current_input_table(&self) -> &NonEmpty<InputRow> {
         match self.current_input_type {
-            InputType::Headers => &mut self.headers_input,
-            InputType::Body => &mut self.body_input,
+            InputType::Headers => &self.headers_input_table,
+            InputType::Body => &self.body_input_table,
+        }
+    }
+
+    fn current_input_row(&self) -> &InputRow {
+        &self.current_input_table()[self.input_index]
+    }
+
+    fn current_input(&self) -> &Input {
+        match self.current_input_field {
+            InputField::Key => &self.current_input_row().key,
+            InputField::Value => &self.current_input_row().value,
+        }
+    }
+
+    fn current_input_table_mut(&mut self) -> &mut NonEmpty<InputRow> {
+        match self.current_input_type {
+            InputType::Headers => &mut self.headers_input_table,
+            InputType::Body => &mut self.body_input_table,
+        }
+    }
+
+    fn current_input_row_mut(&mut self) -> &mut InputRow {
+        let input_index = self.input_index;
+        &mut self.current_input_table_mut()[input_index]
+    }
+
+    fn current_input_mut(&mut self) -> &mut Input {
+        match self.current_input_field {
+            InputField::Key => &mut self.current_input_row_mut().key,
+            InputField::Value => &mut self.current_input_row_mut().value,
         }
     }
 
     fn body_string(&self) -> String {
         let mut object = object! {};
-        self.body_input
+        self.body_input_table
             .iter()
-            .for_each(|[key, value]| object[key.value()] = value.value().into());
+            .for_each(|InputRow { key, value }| object[key.value()] = value.value().into());
 
         object.dump()
     }

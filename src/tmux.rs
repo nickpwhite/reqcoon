@@ -1,4 +1,4 @@
-use std::{env, process::{Command}};
+use std::{env, process::Command};
 
 pub enum Direction {
     Left,
@@ -20,6 +20,14 @@ impl Direction {
 
 pub fn select_tmux_panel(direction: Direction) {
     let Ok(tmux) = env::var("TMUX") else { return };
-    let Some(socket) = tmux.split(',').next() else { return };
-    Command::new("tmux").args(["-S", socket]).args(["select-pane", "-t", direction.serialize()]).status().ok();
+    let Some(socket) = tmux.split(',').next() else {
+        return;
+    };
+    let Ok(_) = Command::new("tmux")
+        .args(["-S", socket])
+        .args(["select-pane", "-t", direction.serialize()])
+        .output()
+    else {
+        return;
+    };
 }

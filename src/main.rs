@@ -96,46 +96,42 @@ fn handle_event(model: &Model) -> Option<Message> {
 
 fn globally_pre_handle_key(key: event::KeyEvent, model: &Model) -> Option<Message> {
     match model.current_mode {
-        Mode::Normal => {
-            match key.modifiers {
-                KeyModifiers::CONTROL => match key.code {
-                    KeyCode::Char('h') => Some(Message::SelectPanelLeft),
-                    KeyCode::Char('j') => Some(Message::SelectPanelDown),
-                    KeyCode::Char('k') => Some(Message::SelectPanelUp),
-                    KeyCode::Char('l') => Some(Message::SelectPanelRight),
-                    _ => None
-                },
-                KeyModifiers::NONE => match key.code {
-                    KeyCode::Char('i') => Some(Message::EnterInsert),
-                    _ => None
-                },
-                _ => None
-            }
-        },
-        Mode::Insert => {
-            match key.modifiers {
-                KeyModifiers::ALT => match key.code {
-                    KeyCode::Char('1') => Some(Message::SelectPanel(Panel::Method)),
-                    KeyCode::Char('2') => Some(Message::SelectPanel(Panel::Url)),
-                    KeyCode::Char('3') => Some(Message::SelectPanel(Panel::Input)),
-                    KeyCode::Char('4') => Some(Message::SelectPanel(Panel::Output)),
-                    _ => None,
-                },
-                KeyModifiers::CONTROL => match key.code {
-                    KeyCode::Char('c') if key.modifiers == KeyModifiers::CONTROL => Some(Message::Quit),
-                    _ => None,
-                },
-                KeyModifiers::NONE => match key.code {
-                    KeyCode::Esc => Some(Message::EnterNormal),
-                    _ => None,
-                },
+        Mode::Normal => match key.modifiers {
+            KeyModifiers::CONTROL => match key.code {
+                KeyCode::Char('h') => Some(Message::SelectPanelLeft),
+                KeyCode::Char('j') => Some(Message::SelectPanelDown),
+                KeyCode::Char('k') => Some(Message::SelectPanelUp),
+                KeyCode::Char('l') => Some(Message::SelectPanelRight),
                 _ => None,
-            }
-        }
+            },
+            KeyModifiers::NONE => match key.code {
+                KeyCode::Char('i') => Some(Message::EnterInsert),
+                _ => None,
+            },
+            _ => None,
+        },
+        Mode::Insert => match key.modifiers {
+            KeyModifiers::ALT => match key.code {
+                KeyCode::Char('1') => Some(Message::SelectPanel(Panel::Method)),
+                KeyCode::Char('2') => Some(Message::SelectPanel(Panel::Url)),
+                KeyCode::Char('3') => Some(Message::SelectPanel(Panel::Input)),
+                KeyCode::Char('4') => Some(Message::SelectPanel(Panel::Output)),
+                _ => None,
+            },
+            KeyModifiers::CONTROL => match key.code {
+                KeyCode::Char('c') if key.modifiers == KeyModifiers::CONTROL => Some(Message::Quit),
+                _ => None,
+            },
+            KeyModifiers::NONE => match key.code {
+                KeyCode::Esc => Some(Message::EnterNormal),
+                _ => None,
+            },
+            _ => None,
+        },
     }
 }
 
-fn handle_method_key(key: event::KeyEvent, model: &Model) -> Option<Message> {
+fn handle_method_key(key: event::KeyEvent, _model: &Model) -> Option<Message> {
     match key.code {
         KeyCode::Char('j') | KeyCode::Down => Some(Message::NextMethod),
         KeyCode::Char('k') | KeyCode::Up => Some(Message::PreviousMethod),
@@ -143,14 +139,14 @@ fn handle_method_key(key: event::KeyEvent, model: &Model) -> Option<Message> {
     }
 }
 
-fn handle_url_key(key: event::KeyEvent, model: &Model) -> Option<Message> {
+fn handle_url_key(key: event::KeyEvent, _model: &Model) -> Option<Message> {
     match key.code {
         KeyCode::Enter => Some(Message::SubmitRequest),
         _ => Some(Message::UrlInput(Event::Key(key))),
     }
 }
 
-fn handle_input_key(key: event::KeyEvent, model: &Model) -> Option<Message> {
+fn handle_input_key(key: event::KeyEvent, _model: &Model) -> Option<Message> {
     match key.code {
         KeyCode::Right if key.modifiers == KeyModifiers::SHIFT => Some(Message::NextInputType),
         KeyCode::Left if key.modifiers == KeyModifiers::SHIFT => Some(Message::PreviousInputType),
@@ -160,11 +156,11 @@ fn handle_input_key(key: event::KeyEvent, model: &Model) -> Option<Message> {
     }
 }
 
-fn handle_output_key(_key: event::KeyEvent, model: &Model) -> Option<Message> {
+fn handle_output_key(_key: event::KeyEvent, _model: &Model) -> Option<Message> {
     None
 }
 
-fn globally_post_handle_key(_key: event::KeyEvent, model: &Model) -> Option<Message> {
+fn globally_post_handle_key(_key: event::KeyEvent, _model: &Model) -> Option<Message> {
     None
 }
 

@@ -4,8 +4,8 @@ use ratatui::{
     symbols,
     text::{Line, Span, Text},
     widgets::{
-        Block, Borders, Clear, HighlightSpacing, List, Padding, Paragraph, Row,
-        StatefulWidget, Table, Wrap,
+        Block, Borders, Clear, HighlightSpacing, List, Padding, Paragraph, Row, StatefulWidget,
+        Table, TableState, Wrap,
     },
     Frame,
 };
@@ -14,12 +14,13 @@ use crate::model::{InputField, InputType, Mode, Model, Panel, METHODS};
 
 pub fn view(f: &mut Frame, model: &mut Model) {
     // Create the layout sections.
-    let [top_section, input_section, output_section] = Layout::default()
+    let [top_section, input_section, output_section, statusbar_section] = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3),
             Constraint::Percentage(50),
             Constraint::Percentage(50),
+            Constraint::Length(1),
         ])
         .areas(f.size());
 
@@ -36,8 +37,15 @@ pub fn view(f: &mut Frame, model: &mut Model) {
 
     f.render_widget(method_block(model), method_section);
     f.render_widget(url_block(model), url_section);
-    f.render_widget(input_block(model), input_section);
     f.render_widget(output_block(model), output_section);
+    f.render_widget(statusbar_block(model), statusbar_section);
+
+    let mut table_state = TableState::default().with_selected(model.input_index);
+    f.render_stateful_widget(
+        input_block(model),
+        input_section,
+        &mut table_state,
+    );
 
     if model.current_panel == Panel::Method && model.current_mode == Mode::Insert {
         f.render_widget(Clear, method_selector_section);
@@ -52,9 +60,12 @@ pub fn view(f: &mut Frame, model: &mut Model) {
     let (col_offset, row_offset) = match model.current_panel {
         Panel::Method => (1, 1),
         Panel::Url => (url_section.x + 1, 1),
-        Panel::Input => match model.current_input_field {
-            InputField::Key => (3, input_section.y + 4),
-            InputField::Value => (input_section.width / 2 + 1, input_section.y + 4),
+        Panel::Input => {
+            let col = match model.current_input_field {
+                InputField::Key => 3,
+                InputField::Value => input_section.width / 2 + 1,
+            };
+            (col, input_section.y + 4 - (table_state.offset() as u16))
         },
         Panel::Output => (0, output_section.y),
     };
@@ -138,9 +149,7 @@ fn input_block(model: &Model) -> Table {
         .border_style(style)
         .padding(Padding::proportional(1));
 
-    let rows = model.current_input()
-        .iter()
-        .map(|[key, value]| Row::new(vec![key.value(), value.value()]));
+    let rows = model.current_input_table().iter().map(Row::new);
 
     Table::new(
         rows,
@@ -184,4 +193,8 @@ fn output_block(model: &Model) -> Paragraph {
     Paragraph::new(model.output_text.clone())
         .wrap(Wrap { trim: false })
         .block(output_block)
+}
+
+fn statusbar_block(model: &Model) -> Paragraph {
+    Paragraph::new(model.current_mode.to_string())
 }
