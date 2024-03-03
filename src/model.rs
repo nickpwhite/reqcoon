@@ -1,4 +1,4 @@
-use std::{fmt, vec};
+use std::fmt;
 
 use crossterm::event::Event;
 use enum_iterator::Sequence;
@@ -70,19 +70,6 @@ impl InputRow {
     }
 }
 
-impl IntoIterator for &InputRow {
-    type Item = String;
-    type IntoIter = vec::IntoIter<Self::Item>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        vec![
-            String::from(self.key.value()),
-            String::from(self.value.value()),
-        ]
-        .into_iter()
-    }
-}
-
 pub const METHODS: [Method; 5] = [
     Method::GET,
     Method::HEAD,
@@ -92,8 +79,6 @@ pub const METHODS: [Method; 5] = [
 ];
 
 pub struct Model {
-    pub cursor_col: u16,
-    pub cursor_row: u16,
     pub current_mode: Mode,
     pub current_panel: Panel,
     pub list_state: ListState,
@@ -110,8 +95,6 @@ pub struct Model {
 impl Model {
     pub fn new() -> Model {
         Model {
-            cursor_col: 2,
-            cursor_row: 0,
             current_mode: Mode::default(),
             current_panel: Panel::default(),
             list_state: ListState::default().with_selected(Some(0)),
@@ -126,23 +109,6 @@ impl Model {
         }
     }
 
-    pub fn update_cursor(&mut self) {
-        match self.current_panel {
-            Panel::Method => self.set_cursor(self.current_method().to_string().len() as u16, 0),
-            Panel::Url => self.set_cursor(self.url_input.visual_cursor() as u16, 0),
-            Panel::Input => {
-                self.set_cursor(0, self.input_index as u16);
-            }
-            Panel::Output => {
-                let output_lines = self.output_text.lines();
-                let (num_lines, last_line) =
-                    output_lines.fold((0, None), |(count, _), elem| (count + 1, Some(elem)));
-
-                self.set_cursor(1 + last_line.unwrap_or("").len() as u16, num_lines + 1);
-            }
-        };
-    }
-
     pub fn enter_insert(&mut self) {
         self.current_mode = Mode::Insert;
     }
@@ -151,16 +117,10 @@ impl Model {
         self.current_mode = Mode::Normal;
     }
 
-    pub fn select_panel(&mut self, panel: Panel) {
-        self.current_panel = panel;
-        self.update_cursor();
-    }
-
     pub fn select_panel_left(&mut self) {
         match self.current_panel {
             Panel::Url => {
                 self.current_panel = Panel::Method;
-                self.update_cursor();
             }
             _ => select_tmux_panel(Direction::Left),
         };
@@ -170,11 +130,9 @@ impl Model {
         match self.current_panel {
             Panel::Url | Panel::Method => {
                 self.current_panel = Panel::Input;
-                self.update_cursor();
             }
             Panel::Input => {
                 self.current_panel = Panel::Output;
-                self.update_cursor();
             }
             _ => select_tmux_panel(Direction::Down),
         };
@@ -184,11 +142,9 @@ impl Model {
         match self.current_panel {
             Panel::Output => {
                 self.current_panel = Panel::Input;
-                self.update_cursor();
             }
             Panel::Input => {
                 self.current_panel = Panel::Url;
-                self.update_cursor();
             }
             _ => select_tmux_panel(Direction::Up),
         };
@@ -198,16 +154,23 @@ impl Model {
         match self.current_panel {
             Panel::Method => {
                 self.current_panel = Panel::Url;
-                self.update_cursor();
             }
             _ => select_tmux_panel(Direction::Right),
         };
     }
 
+    pub fn method_cursor_position(&self) -> u16 {
+        let offset = match self.current_mode {
+            Mode::Normal => 0,
+            Mode::Insert => 1,
+        };
+
+        self.current_method().to_string().len() as u16 + offset
+    }
+
     pub fn next_method(&mut self) {
         let new_index = (self.list_state.selected().unwrap_or(0) + 1) % METHODS.len();
         self.list_state.select(Some(new_index));
-        self.update_cursor();
     }
 
     pub fn previous_method(&mut self) {
@@ -218,23 +181,50 @@ impl Model {
             .checked_add_signed(-1)
             .unwrap_or(METHODS.len() - 1);
         self.list_state.select(Some(new_index));
-        self.update_cursor();
     }
 
     pub fn current_method(&self) -> &Method {
         &METHODS[self.list_state.selected().unwrap_or(0)]
     }
 
+    pub fn url_cursor_position(&self) -> u16 {
+        let offset = match self.current_mode {
+            Mode::Normal => {
+                if self.url_input.visual_cursor() == 0 {
+                    1
+                } else {
+                    0
+                }
+            }
+            Mode::Insert => 1,
+        };
+
+        self.url_input.visual_cursor() as u16 + offset
+    }
+
     pub fn handle_url_input(&mut self, event: Event) {
         self.url_input.handle_event(&event);
-        self.update_cursor();
+    }
+
+    pub fn input_cursor_position(&self) -> u16 {
+        let offset = match self.current_mode {
+            Mode::Normal => {
+                if self.current_input().visual_cursor() == 0 {
+                    1
+                } else {
+                    0
+                }
+            }
+            Mode::Insert => 1,
+        };
+
+        self.current_input().visual_cursor() as u16 + offset
     }
 
     pub fn next_input_type(&mut self) {
         self.current_input_type = self.current_input_type.next().unwrap_or_default();
         self.current_input_field = InputField::default();
         self.input_index = self.current_input_table().len() - 1;
-        self.update_cursor();
     }
 
     pub fn previous_input_type(&mut self) {
@@ -244,7 +234,6 @@ impl Model {
             .unwrap_or(InputType::last().unwrap());
         self.current_input_field = InputField::default();
         self.input_index = self.current_input_table().len() - 1;
-        self.update_cursor();
     }
 
     pub fn next_input_field(&mut self) {
@@ -257,7 +246,6 @@ impl Model {
             }
         }
         self.current_input_field = self.current_input_field.next().unwrap_or_default();
-        self.update_cursor();
     }
 
     pub fn previous_input_field(&mut self) {
@@ -272,12 +260,10 @@ impl Model {
             .current_input_field
             .previous()
             .unwrap_or(InputField::last().unwrap());
-        self.update_cursor();
     }
 
     pub fn handle_input_input(&mut self, event: Event) {
         self.current_input_mut().handle_event(&event);
-        self.update_cursor();
     }
 
     pub fn submit_request(&mut self) {
@@ -297,11 +283,6 @@ impl Model {
             Ok(response) => self.output_text = response.text().expect("Error unwrapping body"),
             Err(error) => self.output_text = format!("{:?}", error),
         };
-    }
-
-    fn set_cursor(&mut self, column: u16, row: u16) {
-        self.cursor_col = column;
-        self.cursor_row = row;
     }
 
     pub fn current_input_table(&self) -> &NonEmpty<InputRow> {

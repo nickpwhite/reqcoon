@@ -62,25 +62,24 @@ pub fn view(f: &mut Frame, model: &mut Model) {
         );
     }
 
-    let (col_offset, row_offset) = match model.current_panel {
-        Panel::Method => (1, 1),
-        Panel::Url => (url_section.x + 1, 1),
+    let (col, row) = match model.current_panel {
+        Panel::Method => (model.method_cursor_position(), 1),
+        Panel::Url => (model.url_cursor_position() + url_section.x, 1),
         Panel::Input => {
-            let col = match model.current_input_field {
-                InputField::Key => 3,
-                InputField::Value => input_section.width / 2 + 1,
+            let start_col = match model.current_input_field {
+                InputField::Key => 2,
+                InputField::Value => input_section.width / 2,
             };
-            let input_col = model.current_input().visual_cursor() as u16 % input_field_width;
-            let input_row = model.current_input().visual_cursor() as u16 / input_field_width;
+            let input_row = model.input_cursor_position() / input_field_width;
             (
-                col + input_col,
-                input_section.y + 4 + input_row - (table_state.offset() as u16),
+                start_col + model.input_cursor_position() % input_field_width,
+                (model.input_index - table_state.offset()) as u16 + input_section.y + 4 + input_row,
             )
         }
-        Panel::Output => (0, output_section.y),
+        Panel::Output => (1, output_section.y + 1),
     };
 
-    f.set_cursor(model.cursor_col + col_offset, model.cursor_row + row_offset);
+    f.set_cursor(col, row);
 }
 
 fn active_style() -> Style {
