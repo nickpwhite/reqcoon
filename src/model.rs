@@ -131,10 +131,7 @@ impl Model {
             Panel::Method => self.set_cursor(self.current_method().to_string().len() as u16, 0),
             Panel::Url => self.set_cursor(self.url_input.visual_cursor() as u16, 0),
             Panel::Input => {
-                self.set_cursor(
-                    self.current_input().visual_cursor() as u16,
-                    self.input_index as u16,
-                );
+                self.set_cursor(0, self.input_index as u16);
             }
             Panel::Output => {
                 let output_lines = self.output_text.lines();
@@ -318,7 +315,7 @@ impl Model {
         &self.current_input_table()[self.input_index]
     }
 
-    fn current_input(&self) -> &Input {
+    pub fn current_input(&self) -> &Input {
         match self.current_input_field {
             InputField::Key => &self.current_input_row().key,
             InputField::Value => &self.current_input_row().value,

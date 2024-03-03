@@ -38,6 +38,8 @@ pub fn view(f: &mut Frame, model: &mut Model) {
                 .split(f.size())[1],
         );
 
+    let input_field_width = (input_section.width - 6) / 2 - 1;
+
     f.render_widget(method_block(model), method_section);
     f.render_widget(url_block(model), url_section);
     f.render_widget(output_block(model), output_section);
@@ -45,7 +47,7 @@ pub fn view(f: &mut Frame, model: &mut Model) {
 
     let mut table_state = TableState::default().with_selected(model.input_index);
     f.render_stateful_widget(
-        input_block(model, input_section.width),
+        input_block(model, input_field_width as usize),
         input_section,
         &mut table_state,
     );
@@ -68,7 +70,12 @@ pub fn view(f: &mut Frame, model: &mut Model) {
                 InputField::Key => 3,
                 InputField::Value => input_section.width / 2 + 1,
             };
-            (col, input_section.y + 4 - (table_state.offset() as u16))
+            let input_col = model.current_input().visual_cursor() as u16 % input_field_width;
+            let input_row = model.current_input().visual_cursor() as u16 / input_field_width;
+            (
+                col + input_col,
+                input_section.y + 4 + input_row - (table_state.offset() as u16),
+            )
         }
         Panel::Output => (0, output_section.y),
     };
@@ -139,7 +146,7 @@ fn url_block(model: &Model) -> Paragraph {
     Paragraph::new(model.url_input.value()).block(url_block)
 }
 
-fn input_block(model: &Model, block_width: u16) -> Table {
+fn input_block(model: &Model, field_width: usize) -> Table {
     let style = if model.current_panel == Panel::Input {
         active_style()
     } else {
@@ -157,14 +164,12 @@ fn input_block(model: &Model, block_width: u16) -> Table {
         .block(input_block)
         .header(Row::new(vec!["Key", "Value"]).bottom_margin(1));
 
-    let field_width = ((block_width - 6) / 2 - 1) as usize;
-
     let rows = model
         .current_input_table()
         .iter()
         .enumerate()
         .map(|(i, input_row)| {
-            let (key, value) = if model.input_index == i {
+            let (key, value) = if model.current_panel == Panel::Input && model.input_index == i {
                 match model.current_input_field {
                     InputField::Key => (
                         wrap_string(input_row.key.value(), field_width),
@@ -181,7 +186,7 @@ fn input_block(model: &Model, block_width: u16) -> Table {
                     truncate_ellipse(input_row.value.value(), field_width),
                 )
             };
-            let height = std::cmp::max(key.lines.len(), value.lines.len()) as u16;
+            let height = std::cmp::max(key.lines().count(), value.lines().count()) as u16;
 
             Row::new(vec![key, value]).height(height)
         });
