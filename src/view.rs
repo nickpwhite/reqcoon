@@ -159,12 +159,7 @@ fn input_block(model: &Model, field_width: usize) -> Table {
         .border_style(style)
         .padding(Padding::proportional(1));
 
-    let table = Table::default()
-        .widths([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .block(input_block)
-        .header(Row::new(vec!["Key", "Value"]).bottom_margin(1));
-
-    let rows = model
+    model
         .current_input_table()
         .iter()
         .enumerate()
@@ -189,9 +184,11 @@ fn input_block(model: &Model, field_width: usize) -> Table {
             let height = std::cmp::max(key.lines().count(), value.lines().count()) as u16;
 
             Row::new(vec![key, value]).height(height)
-        });
-
-    table.rows(rows)
+        })
+        .collect::<Table>()
+        .widths([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .block(input_block)
+        .header(Row::new(vec!["Key", "Value"]).bottom_margin(1))
 }
 
 fn input_title(model: &Model) -> Line<'static> {
