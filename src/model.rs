@@ -60,8 +60,8 @@ pub enum InputField {
 
 #[derive(Default)]
 pub struct InputRow {
-    key: Input,
-    value: Input,
+    pub key: Input,
+    pub value: Input,
 }
 
 impl InputRow {

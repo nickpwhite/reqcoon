@@ -10,7 +10,10 @@ use ratatui::{
     Frame,
 };
 
-use crate::model::{InputField, InputType, Mode, Model, Panel, METHODS};
+use crate::{
+    model::{InputField, InputType, Mode, Model, Panel, METHODS},
+    text_wrapping::{truncate_ellipse, wrap_string},
+};
 
 pub fn view(f: &mut Frame, model: &mut Model) {
     // Create the layout sections.
@@ -41,7 +44,11 @@ pub fn view(f: &mut Frame, model: &mut Model) {
     f.render_widget(statusbar_block(model), statusbar_section);
 
     let mut table_state = TableState::default().with_selected(model.input_index);
-    f.render_stateful_widget(input_block(model), input_section, &mut table_state);
+    f.render_stateful_widget(
+        input_block(model, input_section.width),
+        input_section,
+        &mut table_state,
+    );
 
     if model.current_panel == Panel::Method && model.current_mode == Mode::Insert {
         f.render_widget(Clear, method_selector_section);
@@ -132,7 +139,7 @@ fn url_block(model: &Model) -> Paragraph {
     Paragraph::new(model.url_input.value()).block(url_block)
 }
 
-fn input_block(model: &Model) -> Table {
+fn input_block(model: &Model, block_width: u16) -> Table {
     let style = if model.current_panel == Panel::Input {
         active_style()
     } else {
@@ -145,14 +152,41 @@ fn input_block(model: &Model) -> Table {
         .border_style(style)
         .padding(Padding::proportional(1));
 
-    let rows = model.current_input_table().iter().map(Row::new);
+    let table = Table::default()
+        .widths([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .block(input_block)
+        .header(Row::new(vec!["Key", "Value"]).bottom_margin(1));
 
-    Table::new(
-        rows,
-        [Constraint::Percentage(50), Constraint::Percentage(50)],
-    )
-    .block(input_block)
-    .header(Row::new(vec!["Key", "Value"]).bottom_margin(1))
+    let field_width = ((block_width - 6) / 2 - 1) as usize;
+
+    let rows = model
+        .current_input_table()
+        .iter()
+        .enumerate()
+        .map(|(i, input_row)| {
+            let (key, value) = if model.input_index == i {
+                match model.current_input_field {
+                    InputField::Key => (
+                        wrap_string(input_row.key.value(), field_width),
+                        truncate_ellipse(input_row.value.value(), field_width),
+                    ),
+                    InputField::Value => (
+                        truncate_ellipse(input_row.key.value(), field_width),
+                        wrap_string(input_row.value.value(), field_width),
+                    ),
+                }
+            } else {
+                (
+                    truncate_ellipse(input_row.key.value(), field_width),
+                    truncate_ellipse(input_row.value.value(), field_width),
+                )
+            };
+            let height = std::cmp::max(key.lines.len(), value.lines.len()) as u16;
+
+            Row::new(vec![key, value]).height(height)
+        });
+
+    table.rows(rows)
 }
 
 fn input_title(model: &Model) -> Line<'static> {

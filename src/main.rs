@@ -1,8 +1,10 @@
 use std::{error::Error, time::Duration};
 
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use log::LevelFilter;
 
 mod model;
+mod text_wrapping;
 mod tmux;
 mod tui;
 mod view;
@@ -45,6 +47,8 @@ enum Message {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    simple_logging::log_to_file("debug.log", LevelFilter::Info)?;
+
     // setup terminal
     tui::install_panic_hook();
     let mut terminal = tui::init_terminal();
