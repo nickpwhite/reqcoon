@@ -1,0 +1,18 @@
+request = _{
+    request_line ~ headers? ~ body_block?
+}
+
+request_line = _{ method ~ " "+ ~ uri ~ http_version? }
+method       =  { ("OPTIONS" | "GET" | "HEAD" | "POST" | "PUT" | "DELETE" | "TRACE" | "CONNECT" | "PATCH") }
+uri          =  { (!whitespace ~ ANY)+ }
+whitespace   = _{ " " | "\t" | NEWLINE }
+http_version = _{ whitespace+ ~ "HTTP/" ~ version }
+version      =  { (ASCII_DIGIT | ".")+ }
+
+headers      = { header+ }
+header       = { NEWLINE ~ header_name ~ ":" ~ whitespace ~ header_value }
+header_name  = { (!(":" | NEWLINE) ~ ANY)+ }
+header_value = { (!NEWLINE ~ ANY)+ }
+
+body_block = _{ NEWLINE+ ~ body }
+body       =  { ANY+ }

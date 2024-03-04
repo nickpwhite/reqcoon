@@ -1,9 +1,14 @@
 use std::fmt;
+use std::fs::File;
+use std::io::{self, Read, Write};
+use std::iter::Iterator;
 
 use crossterm::event::Event;
 use enum_iterator::Sequence;
 use json::object;
 use nonempty::{nonempty, NonEmpty};
+use pest::Parser;
+use pest_derive::Parser;
 use ratatui::widgets::ListState;
 use reqwest::{blocking::Client, Method, Url};
 use tui_input::{backend::crossterm::EventHandler, Input};
@@ -70,18 +75,16 @@ impl InputRow {
     }
 }
 
-pub const METHODS: [Method; 5] = [
-    Method::GET,
-    Method::HEAD,
-    Method::POST,
-    Method::PUT,
-    Method::DELETE,
-];
+#[derive(Parser)]
+#[grammar = "http.pest"]
+struct RequestParser;
 
 pub struct Model {
+    pub filename: String,
     pub current_mode: Mode,
     pub current_panel: Panel,
     pub list_state: ListState,
+    pub current_method: Method,
     pub url_input: Input,
     pub current_input_type: InputType,
     pub current_input_field: InputField,
@@ -93,11 +96,13 @@ pub struct Model {
 }
 
 impl Model {
-    pub fn new() -> Model {
+    pub fn new(filename: String) -> Model {
         Model {
+            filename,
             current_mode: Mode::default(),
             current_panel: Panel::default(),
             list_state: ListState::default().with_selected(Some(0)),
+            current_method: Method::GET,
             url_input: Input::default(),
             current_input_type: InputType::default(),
             current_input_field: InputField::Key,
@@ -107,6 +112,85 @@ impl Model {
             output_text: String::new(),
             exit: false,
         }
+    }
+
+    pub fn from_file(filename: String) -> Result<Self, Box<dyn std::error::Error>> {
+        let mut input = String::new();
+        let mut file = File::open(filename.clone())?;
+        file.read_to_string(&mut input)?;
+
+        let mut method = Method::GET;
+        let mut uri = "";
+        let mut headers_input = vec![];
+        let mut body_input = vec![];
+
+        let pairs = RequestParser::parse(Rule::request, &input)?;
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::method => method = Method::from_bytes(pair.as_str().as_bytes())?,
+                Rule::uri => uri = pair.as_str(),
+                Rule::headers => {
+                    for header in pair.into_inner() {
+                        let mut key = "";
+                        let mut value = "";
+                        for inner_rule in header.into_inner() {
+                            match inner_rule.as_rule() {
+                                Rule::header_name => key = inner_rule.as_str(),
+                                Rule::header_value => value = inner_rule.as_str(),
+                                _ => (),
+                            }
+                        }
+                        headers_input.push(InputRow {
+                            key: key.into(),
+                            value: value.into(),
+                        });
+                    }
+                }
+                Rule::body => {
+                    let object = json::parse(pair.as_str())?;
+                    for (key, value) in object.entries() {
+                        body_input.push(InputRow {
+                            key: key.into(),
+                            value: value.as_str().unwrap().into(),
+                        })
+                    }
+                }
+                _ => (),
+            }
+        }
+
+        Ok(Self {
+            filename,
+            current_mode: Mode::default(),
+            current_panel: Panel::default(),
+            list_state: ListState::default().with_selected(Some(0)),
+            current_method: method,
+            url_input: Input::from(uri),
+            current_input_type: InputType::default(),
+            current_input_field: InputField::Key,
+            input_index: 0,
+            headers_input_table: NonEmpty::from_vec(headers_input)
+                .unwrap_or(nonempty![InputRow::default()]),
+            body_input_table: NonEmpty::from_vec(body_input)
+                .unwrap_or(nonempty![InputRow::default()]),
+            output_text: String::new(),
+            exit: false,
+        })
+    }
+
+    pub fn to_file(&self) -> io::Result<()> {
+        let mut output = format!("{} {}", self.current_method, self.url_input.value());
+        if !self.headers_string().is_empty() {
+            output.push_str("\n");
+            output.push_str(&self.headers_string());
+        }
+        if !self.body_string().is_empty() {
+            output.push_str("\n\n");
+            output.push_str(&self.body_string());
+        }
+        let mut file = File::create(&self.filename)?;
+
+        file.write_all(output.as_bytes())
     }
 
     pub fn enter_insert(&mut self) {
@@ -165,26 +249,41 @@ impl Model {
             Mode::Insert => 1,
         };
 
-        self.current_method().to_string().len() as u16 + offset
+        self.current_method.to_string().len() as u16 + offset
     }
 
     pub fn next_method(&mut self) {
-        let new_index = (self.list_state.selected().unwrap_or(0) + 1) % METHODS.len();
-        self.list_state.select(Some(new_index));
+        let new_method = match self.current_method {
+            Method::OPTIONS => Method::GET,
+            Method::GET => Method::HEAD,
+            Method::HEAD => Method::POST,
+            Method::POST => Method::PUT,
+            Method::PUT => Method::PATCH,
+            Method::PATCH => Method::DELETE,
+            Method::DELETE => Method::TRACE,
+            Method::TRACE => Method::CONNECT,
+            Method::CONNECT => Method::OPTIONS,
+            _ => return,
+        };
+
+        self.current_method = new_method;
     }
 
     pub fn previous_method(&mut self) {
-        let new_index = self
-            .list_state
-            .selected()
-            .unwrap_or(0)
-            .checked_add_signed(-1)
-            .unwrap_or(METHODS.len() - 1);
-        self.list_state.select(Some(new_index));
-    }
+        let new_method = match self.current_method {
+            Method::OPTIONS => Method::CONNECT,
+            Method::GET => Method::OPTIONS,
+            Method::HEAD => Method::GET,
+            Method::POST => Method::HEAD,
+            Method::PUT => Method::POST,
+            Method::PATCH => Method::PUT,
+            Method::DELETE => Method::PATCH,
+            Method::TRACE => Method::DELETE,
+            Method::CONNECT => Method::TRACE,
+            _ => return,
+        };
 
-    pub fn current_method(&self) -> &Method {
-        &METHODS[self.list_state.selected().unwrap_or(0)]
+        self.current_method = new_method;
     }
 
     pub fn url_cursor_position(&self) -> u16 {
@@ -268,12 +367,10 @@ impl Model {
 
     pub fn submit_request(&mut self) {
         let url = Url::parse(&self.url_input.value()).expect("Invalid URL");
-        let mut request_builder = Client::new().request(self.current_method().clone(), url);
+        let mut request_builder = Client::new().request(self.current_method.clone(), url);
 
         request_builder = self
-            .headers_input_table
-            .iter()
-            .filter(|header| !header.key.value().is_empty())
+            .non_empty_headers()
             .fold(request_builder, |builder, InputRow { key, value }| {
                 builder.header(key.value(), value.value())
             });
@@ -322,10 +419,27 @@ impl Model {
         }
     }
 
-    fn body_string(&self) -> String {
-        let mut object = object! {};
+    fn non_empty_headers(&self) -> impl Iterator<Item = &InputRow> {
+        self.headers_input_table
+            .iter()
+            .filter(|header| !header.key.value().is_empty())
+    }
+
+    fn headers_string(&self) -> String {
+        self.non_empty_headers()
+            .map(|input_row| format!("{}: {}", input_row.key.value(), input_row.value.value()))
+            .collect()
+    }
+
+    fn non_empty_body(&self) -> impl Iterator<Item = &InputRow> {
         self.body_input_table
             .iter()
+            .filter(|body_pair| !body_pair.key.value().is_empty())
+    }
+
+    fn body_string(&self) -> String {
+        let mut object = object! {};
+        self.non_empty_body()
             .for_each(|InputRow { key, value }| object[key.value()] = value.value().into());
 
         object.dump()

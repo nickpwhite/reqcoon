@@ -48,10 +48,12 @@ enum Message {
 fn main() -> Result<(), Box<dyn Error>> {
     simple_logging::log_to_file("debug.log", LevelFilter::Info)?;
 
+    let filename = "test.http".to_string();
+
     // setup terminal
     tui::install_panic_hook();
     let mut terminal = tui::init_terminal();
-    let mut model = Model::new();
+    let mut model = Model::from_file(filename.clone()).unwrap_or(Model::new(filename));
 
     while model.exit == false {
         match model.current_mode {
@@ -67,6 +69,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             current_message = update(&mut model, current_message.unwrap());
         }
     }
+
+    model.to_file()?;
 
     tui::restore_terminal();
     Ok(())

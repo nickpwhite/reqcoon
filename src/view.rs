@@ -1,17 +1,13 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout},
-    style::{Color, Modifier, Style, Stylize},
-    symbols,
+    style::{Color, Style, Stylize},
     text::{Line, Span, Text},
-    widgets::{
-        Block, Borders, Clear, HighlightSpacing, List, Padding, Paragraph, Row, StatefulWidget,
-        Table, TableState, Wrap,
-    },
+    widgets::{Block, Borders, Padding, Paragraph, Row, Table, TableState, Wrap},
     Frame,
 };
 
 use crate::{
-    model::{InputField, InputType, Mode, Model, Panel, METHODS},
+    model::{InputField, InputType, Model, Panel},
     text_wrapping::{truncate_ellipse, wrap_string},
 };
 
@@ -32,12 +28,6 @@ pub fn view(f: &mut Frame, model: &mut Model) {
         .constraints([Constraint::Max(12), Constraint::Min(1)])
         .areas(top_section);
 
-    let [method_selector_section, _] =
-        Layout::horizontal([Constraint::Max(12), Constraint::Min(1)]).areas(
-            Layout::vertical([Constraint::Max(2), Constraint::Max(7), Constraint::Min(1)])
-                .split(f.size())[1],
-        );
-
     let input_field_width = (input_section.width - 6) / 2 - 1;
 
     f.render_widget(method_block(model), method_section);
@@ -51,16 +41,6 @@ pub fn view(f: &mut Frame, model: &mut Model) {
         input_section,
         &mut table_state,
     );
-
-    if model.current_panel == Panel::Method && model.current_mode == Mode::Insert {
-        f.render_widget(Clear, method_selector_section);
-        StatefulWidget::render(
-            method_selector(),
-            method_selector_section,
-            f.buffer_mut(),
-            &mut model.list_state,
-        );
-    }
 
     let (col, row) = match model.current_panel {
         Panel::Method => (model.method_cursor_position(), 1),
@@ -99,35 +79,10 @@ fn method_block(model: &Model) -> Paragraph {
         .border_style(style);
 
     Paragraph::new(Text::styled(
-        model.current_method().to_string().clone(),
+        model.current_method.to_string().clone(),
         Style::default().fg(Color::Green),
     ))
     .block(method_block)
-}
-
-fn method_selector() -> List<'static> {
-    let border_set = symbols::border::Set {
-        top_left: symbols::line::VERTICAL_RIGHT,
-        top_right: symbols::line::VERTICAL_LEFT,
-        ..symbols::border::PLAIN
-    };
-    let block = Block::default()
-        .border_set(border_set)
-        .borders(Borders::ALL)
-        .border_style(active_style());
-
-    let items = METHODS.map(|method| String::from(method.as_str()));
-
-    List::new(items)
-        .block(block)
-        .highlight_style(
-            Style::default()
-                .add_modifier(Modifier::BOLD)
-                .add_modifier(Modifier::REVERSED)
-                .fg(Color::Red),
-        )
-        .highlight_symbol(">")
-        .highlight_spacing(HighlightSpacing::Always)
 }
 
 fn url_block(model: &Model) -> Paragraph {
