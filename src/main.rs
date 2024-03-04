@@ -1,5 +1,6 @@
 use std::{error::Error, time::Duration};
 
+use clap::Parser;
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use log::LevelFilter;
 
@@ -12,6 +13,13 @@ use crate::{
     model::{Mode, Model, Panel},
     view::view,
 };
+
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    #[arg(short, long)]
+    filename: String,
+}
 
 #[derive(PartialEq)]
 enum Message {
@@ -48,12 +56,12 @@ enum Message {
 fn main() -> Result<(), Box<dyn Error>> {
     simple_logging::log_to_file("debug.log", LevelFilter::Info)?;
 
-    let filename = "test.http".to_string();
+    let args = Args::parse();
 
     // setup terminal
     tui::install_panic_hook();
     let mut terminal = tui::init_terminal();
-    let mut model = Model::from_file(filename.clone()).unwrap_or(Model::new(filename));
+    let mut model = Model::from_file(args.filename.clone()).unwrap_or(Model::new(args.filename));
 
     while model.exit == false {
         match model.current_mode {
