@@ -89,7 +89,7 @@ fn handle_event(model: &Model) -> Option<Message> {
             if key.kind == event::KeyEventKind::Press {
                 match model.current_mode {
                     Mode::Normal => handle_normal_key(key, model),
-                    Mode::Insert => handle_insert_key(key, model),
+                    Mode::Insert => handle_insert_key(key),
                 }
             } else {
                 None
@@ -115,17 +115,8 @@ fn handle_normal_key(key: event::KeyEvent, model: &Model) -> Option<Message> {
         .or_else(|| globally_post_handle_key(key))
 }
 
-fn handle_insert_key(key: event::KeyEvent, model: &Model) -> Option<Message> {
-    let panel_specific_handler = match model.current_panel {
-        Panel::Method => handle_insert_method_key,
-        Panel::Url => handle_insert_url_key,
-        Panel::Input => handle_insert_input_key,
-        Panel::Output => handle_insert_output_key,
-    };
-
-    globally_pre_handle_insert_key(key)
-        .or_else(|| panel_specific_handler(key))
-        .or_else(|| globally_post_handle_key(key))
+fn handle_insert_key(key: event::KeyEvent) -> Option<Message> {
+    globally_pre_handle_insert_key(key).or_else(|| globally_post_handle_key(key))
 }
 
 fn globally_pre_handle_normal_key(key: event::KeyEvent) -> Option<Message> {
@@ -149,7 +140,6 @@ fn globally_pre_handle_insert_key(key: event::KeyEvent) -> Option<Message> {
     match key.modifiers {
         KeyModifiers::CONTROL => match key.code {
             KeyCode::Char('c') => Some(Message::Quit),
-            KeyCode::Enter => Some(Message::SubmitRequest),
             _ => None,
         },
         KeyModifiers::NONE => match key.code {
@@ -168,22 +158,7 @@ fn handle_normal_method_key(key: event::KeyEvent) -> Option<Message> {
     }
 }
 
-fn handle_insert_method_key(key: event::KeyEvent) -> Option<Message> {
-    match key.code {
-        KeyCode::Char('j') | KeyCode::Down => Some(Message::NextMethod),
-        KeyCode::Char('k') | KeyCode::Up => Some(Message::PreviousMethod),
-        _ => None,
-    }
-}
-
-fn handle_normal_url_key(key: event::KeyEvent) -> Option<Message> {
-    match key.code {
-        KeyCode::Enter => Some(Message::SubmitRequest),
-        _ => None,
-    }
-}
-
-fn handle_insert_url_key(_key: event::KeyEvent) -> Option<Message> {
+fn handle_normal_url_key(_key: event::KeyEvent) -> Option<Message> {
     None
 }
 
@@ -197,20 +172,15 @@ fn handle_normal_input_key(key: event::KeyEvent) -> Option<Message> {
     }
 }
 
-fn handle_insert_input_key(_key: event::KeyEvent) -> Option<Message> {
-    None
-}
-
 fn handle_normal_output_key(_key: event::KeyEvent) -> Option<Message> {
     None
 }
 
-fn handle_insert_output_key(_key: event::KeyEvent) -> Option<Message> {
-    None
-}
-
-fn globally_post_handle_key(_key: event::KeyEvent) -> Option<Message> {
-    None
+fn globally_post_handle_key(key: event::KeyEvent) -> Option<Message> {
+    match key.code {
+        KeyCode::Enter => Some(Message::SubmitRequest),
+        _ => None,
+    }
 }
 
 fn update(model: &mut Model, msg: Message) -> Option<Message> {
