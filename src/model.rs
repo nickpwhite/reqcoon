@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::{self, Read, Write};
 use std::iter::Iterator;
 
-use crossterm::event::Event;
+use crossterm::event::{Event, KeyCode, KeyEvent};
 use enum_iterator::Sequence;
 use json::object;
 use nonempty::{nonempty, NonEmpty};
@@ -11,7 +11,7 @@ use pest::Parser;
 use pest_derive::Parser;
 use ratatui::widgets::ListState;
 use reqwest::{blocking::Client, Method, Url};
-use tui_input::{backend::crossterm::EventHandler, Input};
+use tui_input::{backend::crossterm::EventHandler, Input, InputRequest};
 
 use crate::tmux::{select_tmux_panel, Direction};
 
@@ -309,6 +309,23 @@ impl Model {
 
     pub fn handle_insert_input(&mut self, event: Event) {
         self.current_input_mut().handle_event(&event);
+    }
+
+    pub fn handle_normal_input(&mut self, key_event: KeyEvent) {
+        let input_request = match key_event.code {
+            KeyCode::Char('h') | KeyCode::Left => Some(InputRequest::GoToPrevChar),
+            KeyCode::Char('l') | KeyCode::Right => Some(InputRequest::GoToNextChar),
+            KeyCode::Char('b') => Some(InputRequest::GoToPrevWord),
+            KeyCode::Char('w') => Some(InputRequest::GoToNextWord),
+            KeyCode::Char('^') | KeyCode::Home => Some(InputRequest::GoToStart),
+            KeyCode::Char('$') | KeyCode::End => Some(InputRequest::GoToEnd),
+            _ => None,
+        };
+
+        match input_request {
+            Some(request) => self.current_input_mut().handle(request),
+            _ => None,
+        };
     }
 
     pub fn input_cursor_position(&self) -> u16 {

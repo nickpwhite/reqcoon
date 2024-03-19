@@ -1,7 +1,7 @@
 use std::{error::Error, time::Duration};
 
 use clap::Parser;
-use crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use log::LevelFilter;
 
 mod model;
@@ -39,6 +39,7 @@ enum Message {
 
     // Input
     InsertInput(Event),
+    NormalInput(KeyEvent),
 
     // Input input
     NextInputType,
@@ -86,7 +87,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 fn handle_event(model: &Model) -> Option<Message> {
     if event::poll(Duration::from_millis(250)).expect("Unable to poll events") {
         if let Ok(Event::Key(key)) = event::read() {
-            if key.kind == event::KeyEventKind::Press {
+            if key.kind == KeyEventKind::Press {
                 match model.current_mode {
                     Mode::Normal => handle_normal_key(key, model),
                     Mode::Insert => handle_insert_key(key),
@@ -102,7 +103,7 @@ fn handle_event(model: &Model) -> Option<Message> {
     }
 }
 
-fn handle_normal_key(key: event::KeyEvent, model: &Model) -> Option<Message> {
+fn handle_normal_key(key: KeyEvent, model: &Model) -> Option<Message> {
     let panel_specific_handler = match model.current_panel {
         Panel::Method => handle_normal_method_key,
         Panel::Url => handle_normal_url_key,
@@ -112,14 +113,14 @@ fn handle_normal_key(key: event::KeyEvent, model: &Model) -> Option<Message> {
 
     globally_pre_handle_normal_key(key)
         .or_else(|| panel_specific_handler(key))
-        .or_else(|| globally_post_handle_key(key))
+        .or_else(|| globally_post_handle_normal_key(key))
 }
 
-fn handle_insert_key(key: event::KeyEvent) -> Option<Message> {
-    globally_pre_handle_insert_key(key).or_else(|| globally_post_handle_key(key))
+fn handle_insert_key(key: KeyEvent) -> Option<Message> {
+    globally_pre_handle_insert_key(key).or_else(|| globally_post_handle_insert_key(key))
 }
 
-fn globally_pre_handle_normal_key(key: event::KeyEvent) -> Option<Message> {
+fn globally_pre_handle_normal_key(key: KeyEvent) -> Option<Message> {
     match key.modifiers {
         KeyModifiers::CONTROL => match key.code {
             KeyCode::Char('h') => Some(Message::SelectPanelLeft),
@@ -136,7 +137,7 @@ fn globally_pre_handle_normal_key(key: event::KeyEvent) -> Option<Message> {
     }
 }
 
-fn globally_pre_handle_insert_key(key: event::KeyEvent) -> Option<Message> {
+fn globally_pre_handle_insert_key(key: KeyEvent) -> Option<Message> {
     match key.modifiers {
         KeyModifiers::CONTROL => match key.code {
             KeyCode::Char('c') => Some(Message::Quit),
@@ -150,7 +151,7 @@ fn globally_pre_handle_insert_key(key: event::KeyEvent) -> Option<Message> {
     }
 }
 
-fn handle_normal_method_key(key: event::KeyEvent) -> Option<Message> {
+fn handle_normal_method_key(key: KeyEvent) -> Option<Message> {
     match key.code {
         KeyCode::Char('j') | KeyCode::Down => Some(Message::NextMethod),
         KeyCode::Char('k') | KeyCode::Up => Some(Message::PreviousMethod),
@@ -158,11 +159,11 @@ fn handle_normal_method_key(key: event::KeyEvent) -> Option<Message> {
     }
 }
 
-fn handle_normal_url_key(_key: event::KeyEvent) -> Option<Message> {
+fn handle_normal_url_key(_key: KeyEvent) -> Option<Message> {
     None
 }
 
-fn handle_normal_input_key(key: event::KeyEvent) -> Option<Message> {
+fn handle_normal_input_key(key: KeyEvent) -> Option<Message> {
     match key.code {
         KeyCode::Right if key.modifiers == KeyModifiers::SHIFT => Some(Message::NextInputType),
         KeyCode::Left if key.modifiers == KeyModifiers::SHIFT => Some(Message::PreviousInputType),
@@ -172,14 +173,21 @@ fn handle_normal_input_key(key: event::KeyEvent) -> Option<Message> {
     }
 }
 
-fn handle_normal_output_key(_key: event::KeyEvent) -> Option<Message> {
+fn handle_normal_output_key(_key: KeyEvent) -> Option<Message> {
     None
 }
 
-fn globally_post_handle_key(key: event::KeyEvent) -> Option<Message> {
+fn globally_post_handle_insert_key(key: KeyEvent) -> Option<Message> {
     match key.code {
         KeyCode::Enter => Some(Message::SubmitRequest),
         _ => None,
+    }
+}
+
+fn globally_post_handle_normal_key(key: KeyEvent) -> Option<Message> {
+    match key.code {
+        KeyCode::Enter => Some(Message::SubmitRequest),
+        _ => Some(Message::NormalInput(key)),
     }
 }
 
@@ -194,6 +202,7 @@ fn update(model: &mut Model, msg: Message) -> Option<Message> {
         Message::NextMethod => model.next_method(),
         Message::PreviousMethod => model.previous_method(),
         Message::InsertInput(event) => model.handle_insert_input(event),
+        Message::NormalInput(key_event) => model.handle_normal_input(key_event),
         Message::NextInputType => model.next_input_type(),
         Message::PreviousInputType => model.previous_input_type(),
         Message::NextInputField => model.next_input_field(),
