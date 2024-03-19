@@ -37,15 +37,14 @@ enum Message {
     NextMethod,
     PreviousMethod,
 
-    // URL input
-    UrlInput(Event),
+    // Input
+    InsertInput(Event),
 
     // Input input
     NextInputType,
     PreviousInputType,
     NextInputField,
     PreviousInputField,
-    InputInput(Event),
 
     // Submission
     SubmitRequest,
@@ -155,7 +154,7 @@ fn globally_pre_handle_insert_key(key: event::KeyEvent) -> Option<Message> {
         },
         KeyModifiers::NONE => match key.code {
             KeyCode::Esc => Some(Message::EnterNormal),
-            _ => None,
+            _ => Some(Message::InsertInput(Event::Key(key))),
         },
         _ => None,
     }
@@ -184,8 +183,8 @@ fn handle_normal_url_key(key: event::KeyEvent) -> Option<Message> {
     }
 }
 
-fn handle_insert_url_key(key: event::KeyEvent) -> Option<Message> {
-    Some(Message::UrlInput(Event::Key(key)))
+fn handle_insert_url_key(_key: event::KeyEvent) -> Option<Message> {
+    None
 }
 
 fn handle_normal_input_key(key: event::KeyEvent) -> Option<Message> {
@@ -198,8 +197,8 @@ fn handle_normal_input_key(key: event::KeyEvent) -> Option<Message> {
     }
 }
 
-fn handle_insert_input_key(key: event::KeyEvent) -> Option<Message> {
-    Some(Message::InputInput(Event::Key(key)))
+fn handle_insert_input_key(_key: event::KeyEvent) -> Option<Message> {
+    None
 }
 
 fn handle_normal_output_key(_key: event::KeyEvent) -> Option<Message> {
@@ -224,12 +223,11 @@ fn update(model: &mut Model, msg: Message) -> Option<Message> {
         Message::SelectPanelRight => model.select_panel_right(),
         Message::NextMethod => model.next_method(),
         Message::PreviousMethod => model.previous_method(),
-        Message::UrlInput(event) => model.handle_url_input(event),
+        Message::InsertInput(event) => model.handle_insert_input(event),
         Message::NextInputType => model.next_input_type(),
         Message::PreviousInputType => model.previous_input_type(),
         Message::NextInputField => model.next_input_field(),
         Message::PreviousInputField => model.previous_input_field(),
-        Message::InputInput(event) => model.handle_input_input(event),
         Message::SubmitRequest => model.submit_request(),
         Message::Quit => model.exit = true,
     };

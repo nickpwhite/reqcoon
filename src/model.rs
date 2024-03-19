@@ -85,6 +85,7 @@ pub struct Model {
     pub current_panel: Panel,
     pub list_state: ListState,
     pub current_method: Method,
+    pub method_input: Input,
     pub url_input: Input,
     pub current_input_type: InputType,
     pub current_input_field: InputField,
@@ -92,6 +93,7 @@ pub struct Model {
     pub headers_input_table: NonEmpty<InputRow>,
     pub body_input_table: NonEmpty<InputRow>,
     pub output_text: String,
+    pub output_input: Input,
     pub exit: bool,
 }
 
@@ -103,6 +105,7 @@ impl Model {
             current_panel: Panel::default(),
             list_state: ListState::default().with_selected(Some(0)),
             current_method: Method::GET,
+            method_input: Input::default(),
             url_input: Input::default(),
             current_input_type: InputType::default(),
             current_input_field: InputField::Key,
@@ -110,6 +113,7 @@ impl Model {
             headers_input_table: nonempty![InputRow::default()],
             body_input_table: nonempty![InputRow::default()],
             output_text: String::new(),
+            output_input: Input::default(),
             exit: false,
         }
     }
@@ -165,6 +169,7 @@ impl Model {
             current_panel: Panel::default(),
             list_state: ListState::default().with_selected(Some(0)),
             current_method: method,
+            method_input: Input::default(),
             url_input: Input::from(uri),
             current_input_type: InputType::default(),
             current_input_field: InputField::Key,
@@ -174,6 +179,7 @@ impl Model {
             body_input_table: NonEmpty::from_vec(body_input)
                 .unwrap_or(nonempty![InputRow::default()]),
             output_text: String::new(),
+            output_input: Input::default(),
             exit: false,
         })
     }
@@ -289,7 +295,7 @@ impl Model {
     pub fn url_cursor_position(&self) -> u16 {
         let offset = match self.current_mode {
             Mode::Normal => {
-                if self.url_input.visual_cursor() == 0 {
+                if self.current_input().visual_cursor() == 0 {
                     1
                 } else {
                     0
@@ -298,11 +304,11 @@ impl Model {
             Mode::Insert => 1,
         };
 
-        self.url_input.visual_cursor() as u16 + offset
+        self.current_input().visual_cursor() as u16 + offset
     }
 
-    pub fn handle_url_input(&mut self, event: Event) {
-        self.url_input.handle_event(&event);
+    pub fn handle_insert_input(&mut self, event: Event) {
+        self.current_input_mut().handle_event(&event);
     }
 
     pub fn input_cursor_position(&self) -> u16 {
@@ -361,10 +367,6 @@ impl Model {
             .unwrap_or(InputField::last().unwrap());
     }
 
-    pub fn handle_input_input(&mut self, event: Event) {
-        self.current_input_mut().handle_event(&event);
-    }
-
     pub fn submit_request(&mut self) {
         let url = Url::parse(&self.url_input.value()).expect("Invalid URL");
         let mut request_builder = Client::new().request(self.current_method.clone(), url);
@@ -389,15 +391,32 @@ impl Model {
         }
     }
 
-    fn current_input_row(&self) -> &InputRow {
-        &self.current_input_table()[self.input_index]
+    fn current_input(&self) -> &Input {
+        match self.current_panel {
+            Panel::Method => &self.method_input,
+            Panel::Url => &self.url_input,
+            Panel::Input => match self.current_input_field {
+                InputField::Key => &self.current_input_row().key,
+                InputField::Value => &self.current_input_row().value,
+            },
+            Panel::Output => &self.output_input,
+        }
     }
 
-    pub fn current_input(&self) -> &Input {
-        match self.current_input_field {
-            InputField::Key => &self.current_input_row().key,
-            InputField::Value => &self.current_input_row().value,
+    fn current_input_mut(&mut self) -> &mut Input {
+        match self.current_panel {
+            Panel::Method => &mut self.method_input,
+            Panel::Url => &mut self.url_input,
+            Panel::Input => match self.current_input_field {
+                InputField::Key => &mut self.current_input_row_mut().key,
+                InputField::Value => &mut self.current_input_row_mut().value,
+            },
+            Panel::Output => &mut self.output_input,
         }
+    }
+
+    fn current_input_row(&self) -> &InputRow {
+        &self.current_input_table()[self.input_index]
     }
 
     fn current_input_table_mut(&mut self) -> &mut NonEmpty<InputRow> {
@@ -410,13 +429,6 @@ impl Model {
     fn current_input_row_mut(&mut self) -> &mut InputRow {
         let input_index = self.input_index;
         &mut self.current_input_table_mut()[input_index]
-    }
-
-    fn current_input_mut(&mut self) -> &mut Input {
-        match self.current_input_field {
-            InputField::Key => &mut self.current_input_row_mut().key,
-            InputField::Value => &mut self.current_input_row_mut().value,
-        }
     }
 
     fn non_empty_headers(&self) -> impl Iterator<Item = &InputRow> {
