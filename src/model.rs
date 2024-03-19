@@ -199,12 +199,18 @@ impl Model {
         file.write_all(output.as_bytes())
     }
 
-    pub fn enter_insert(&mut self) {
+    pub fn append(&mut self) {
+        self.current_mode = Mode::Insert;
+        self.current_input_mut().handle(InputRequest::GoToNextChar);
+    }
+
+    pub fn insert(&mut self) {
         self.current_mode = Mode::Insert;
     }
 
-    pub fn enter_normal(&mut self) {
+    pub fn normal(&mut self) {
         self.current_mode = Mode::Normal;
+        self.current_input_mut().handle(InputRequest::GoToPrevChar);
     }
 
     pub fn select_panel_left(&mut self) {
@@ -250,12 +256,7 @@ impl Model {
     }
 
     pub fn method_cursor_position(&self) -> u16 {
-        let offset = match self.current_mode {
-            Mode::Normal => 0,
-            Mode::Insert => 1,
-        };
-
-        self.current_method.to_string().len() as u16 + offset
+        self.current_method.to_string().len() as u16
     }
 
     pub fn next_method(&mut self) {
@@ -292,19 +293,8 @@ impl Model {
         self.current_method = new_method;
     }
 
-    pub fn url_cursor_position(&self) -> u16 {
-        let offset = match self.current_mode {
-            Mode::Normal => {
-                if self.current_input().visual_cursor() == 0 {
-                    1
-                } else {
-                    0
-                }
-            }
-            Mode::Insert => 1,
-        };
-
-        self.current_input().visual_cursor() as u16 + offset
+    pub fn cursor_position(&self) -> u16 {
+        self.current_input().visual_cursor() as u16
     }
 
     pub fn handle_insert_input(&mut self, event: Event) {
@@ -326,21 +316,6 @@ impl Model {
             Some(request) => self.current_input_mut().handle(request),
             _ => None,
         };
-    }
-
-    pub fn input_cursor_position(&self) -> u16 {
-        let offset = match self.current_mode {
-            Mode::Normal => {
-                if self.current_input().visual_cursor() == 0 {
-                    1
-                } else {
-                    0
-                }
-            }
-            Mode::Insert => 1,
-        };
-
-        self.current_input().visual_cursor() as u16 + offset
     }
 
     pub fn next_input_type(&mut self) {

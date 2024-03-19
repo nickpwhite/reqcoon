@@ -44,15 +44,15 @@ pub fn view(f: &mut Frame, model: &mut Model) {
 
     let (col, row) = match model.current_panel {
         Panel::Method => (model.method_cursor_position(), 1),
-        Panel::Url => (model.url_cursor_position() + url_section.x, 1),
+        Panel::Url => (model.cursor_position() + url_section.x + 1, 1),
         Panel::Input => {
             let start_col = match model.current_input_field {
-                InputField::Key => 2,
-                InputField::Value => input_section.width / 2,
+                InputField::Key => 3,
+                InputField::Value => input_section.width / 2 + 1,
             };
-            let input_row = model.input_cursor_position() / input_field_width;
+            let input_row = model.cursor_position() / input_field_width;
             (
-                start_col + model.input_cursor_position() % input_field_width,
+                start_col + model.cursor_position() % input_field_width,
                 (model.input_index - table_state.offset()) as u16 + input_section.y + 4 + input_row,
             )
         }

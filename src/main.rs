@@ -24,8 +24,9 @@ struct Args {
 #[derive(PartialEq)]
 enum Message {
     // Mode
-    EnterInsert,
-    EnterNormal,
+    Append,
+    Insert,
+    Normal,
 
     // Navigation
     SelectPanelLeft,
@@ -130,7 +131,8 @@ fn globally_pre_handle_normal_key(key: KeyEvent) -> Option<Message> {
             _ => None,
         },
         KeyModifiers::NONE => match key.code {
-            KeyCode::Char('i') => Some(Message::EnterInsert),
+            KeyCode::Char('a') => Some(Message::Append),
+            KeyCode::Char('i') => Some(Message::Insert),
             _ => None,
         },
         _ => None,
@@ -144,7 +146,7 @@ fn globally_pre_handle_insert_key(key: KeyEvent) -> Option<Message> {
             _ => None,
         },
         KeyModifiers::NONE => match key.code {
-            KeyCode::Esc => Some(Message::EnterNormal),
+            KeyCode::Esc => Some(Message::Normal),
             _ => Some(Message::InsertInput(Event::Key(key))),
         },
         _ => None,
@@ -193,8 +195,9 @@ fn globally_post_handle_normal_key(key: KeyEvent) -> Option<Message> {
 
 fn update(model: &mut Model, msg: Message) -> Option<Message> {
     match msg {
-        Message::EnterInsert => model.enter_insert(),
-        Message::EnterNormal => model.enter_normal(),
+        Message::Append => model.append(),
+        Message::Insert => model.insert(),
+        Message::Normal => model.normal(),
         Message::SelectPanelLeft => model.select_panel_left(),
         Message::SelectPanelDown => model.select_panel_down(),
         Message::SelectPanelUp => model.select_panel_up(),
