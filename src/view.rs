@@ -17,8 +17,8 @@ pub fn view(f: &mut Frame, model: &mut Model) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3),
-            Constraint::Percentage(50),
-            Constraint::Percentage(50),
+            Constraint::Percentage(30),
+            Constraint::Percentage(70),
             Constraint::Length(1),
         ])
         .areas(f.size());
