@@ -1,8 +1,8 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout},
-    style::{Color, Style, Stylize},
+    style::{Color, Modifier, Style, Stylize},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Padding, Paragraph, Row, Table, TableState, Wrap},
+    widgets::{Block, Borders, Padding, Paragraph, Row, Table, TableState, Widget},
     Frame,
 };
 
@@ -30,10 +30,16 @@ pub fn view(f: &mut Frame, model: &mut Model) {
 
     let input_field_width = (input_section.width - 6) / 2 - 1;
 
+    model.message = format!(
+        "cursor.row: {}, row: {}",
+        model.output_textarea.cursor().0,
+        model.output_textarea.cursor().0 as u16 + output_section.y + 1
+    );
+
     f.render_widget(method_block(model), method_section);
     f.render_widget(url_block(model), url_section);
     f.render_widget(output_block(model), output_section);
-    f.render_widget(statusbar_block(model), statusbar_section);
+    f.render_widget(mode_block(model), statusbar_section);
 
     let mut table_state = TableState::default().with_selected(model.input_index);
     f.render_stateful_widget(
@@ -44,22 +50,27 @@ pub fn view(f: &mut Frame, model: &mut Model) {
 
     let (col, row) = match model.current_panel {
         Panel::Method => (model.method_cursor_position(), 1),
-        Panel::Url => (model.cursor_position() + url_section.x + 1, 1),
+        Panel::Url => (model.cursor_col() + url_section.x + 1, 1),
         Panel::Input => {
             let start_col = match model.current_input_field {
                 InputField::Key => 3,
                 InputField::Value => input_section.width / 2 + 1,
             };
-            let input_row = model.cursor_position() / input_field_width;
+            let input_row = model.cursor_col() / input_field_width;
             (
-                start_col + model.cursor_position() % input_field_width,
+                start_col + model.cursor_col() % input_field_width,
                 (model.input_index - table_state.offset()) as u16 + input_section.y + 4 + input_row,
             )
         }
-        Panel::Output => (1, output_section.y + 1),
+        Panel::Output => {
+            let (row, col) = model.output_textarea.cursor();
+            (col as u16 + 1, row as u16 + output_section.y + 1)
+        }
     };
 
-    f.set_cursor(col, row);
+    if model.current_panel != Panel::Output {
+        f.set_cursor(col, row);
+    }
 }
 
 fn active_style() -> Style {
@@ -164,7 +175,7 @@ fn input_title(model: &Model) -> Line<'static> {
     ])
 }
 
-fn output_block(model: &Model) -> Paragraph {
+fn output_block(model: &mut Model) -> impl Widget + '_ {
     let style = if model.current_panel == Panel::Output {
         active_style()
     } else {
@@ -176,11 +187,25 @@ fn output_block(model: &Model) -> Paragraph {
         .borders(Borders::ALL)
         .border_style(style);
 
-    Paragraph::new(model.output_text.clone())
-        .wrap(Wrap { trim: false })
-        .block(output_block)
+    model
+        .output_textarea
+        .set_cursor_line_style(Style::default());
+    if model.current_panel == Panel::Output {
+        model
+            .output_textarea
+            .set_cursor_style(Style::default().add_modifier(Modifier::REVERSED));
+    } else {
+        model.output_textarea.set_cursor_style(Style::default());
+    }
+    model.output_textarea.set_block(output_block);
+
+    model.output_textarea.widget()
 }
 
-fn statusbar_block(model: &Model) -> Paragraph {
-    Paragraph::new(model.current_mode.to_string())
+fn mode_block(model: &Model) -> Paragraph {
+    Paragraph::new(format!(
+        "{mode} {message}",
+        mode = model.current_mode.to_string(),
+        message = model.message
+    ))
 }

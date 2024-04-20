@@ -12,6 +12,7 @@ use pest_derive::Parser;
 use ratatui::widgets::ListState;
 use reqwest::{blocking::Client, Method, Url};
 use tui_input::{backend::crossterm::EventHandler, Input, InputRequest};
+use tui_textarea::TextArea;
 
 use crate::tmux::{select_tmux_panel, Direction};
 
@@ -92,8 +93,10 @@ pub struct Model {
     pub input_index: usize,
     pub headers_input_table: NonEmpty<InputRow>,
     pub body_input_table: NonEmpty<InputRow>,
-    pub output_text: String,
-    pub output_input: Input,
+    pub output_inputs: NonEmpty<Input>,
+    pub output_row: usize,
+    pub output_textarea: TextArea<'static>,
+    pub message: String,
     pub exit: bool,
 }
 
@@ -112,8 +115,10 @@ impl Model {
             input_index: 0,
             headers_input_table: nonempty![InputRow::default()],
             body_input_table: nonempty![InputRow::default()],
-            output_text: String::new(),
-            output_input: Input::default(),
+            output_inputs: nonempty![Input::default()],
+            output_row: 0,
+            output_textarea: TextArea::default(),
+            message: String::default(),
             exit: false,
         }
     }
@@ -178,8 +183,10 @@ impl Model {
                 .unwrap_or(nonempty![InputRow::default()]),
             body_input_table: NonEmpty::from_vec(body_input)
                 .unwrap_or(nonempty![InputRow::default()]),
-            output_text: String::new(),
-            output_input: Input::default(),
+            output_inputs: nonempty![Input::default()],
+            output_row: 0,
+            output_textarea: TextArea::default(),
+            message: String::default(),
             exit: false,
         })
     }
@@ -293,7 +300,7 @@ impl Model {
         self.current_method = new_method;
     }
 
-    pub fn cursor_position(&self) -> u16 {
+    pub fn cursor_col(&self) -> u16 {
         self.current_input().visual_cursor() as u16
     }
 
@@ -302,6 +309,35 @@ impl Model {
     }
 
     pub fn handle_normal_input(&mut self, key_event: KeyEvent) {
+        if self.current_panel == Panel::Output {
+            let input_event = match key_event.code {
+                KeyCode::Char('j') => Some(KeyEvent {
+                    code: KeyCode::Down,
+                    ..key_event
+                }),
+                KeyCode::Char('k') => Some(KeyEvent {
+                    code: KeyCode::Up,
+                    ..key_event
+                }),
+                KeyCode::Char('h') => Some(KeyEvent {
+                    code: KeyCode::Left,
+                    ..key_event
+                }),
+                KeyCode::Char('l') => Some(KeyEvent {
+                    code: KeyCode::Right,
+                    ..key_event
+                }),
+                _ => None,
+            };
+
+            match input_event {
+                Some(event) => self.output_textarea.input(event),
+                None => self.output_textarea.input(key_event),
+            };
+
+            return;
+        }
+
         let input_request = match key_event.code {
             KeyCode::Char('h') | KeyCode::Left => Some(InputRequest::GoToPrevChar),
             KeyCode::Char('l') | KeyCode::Right => Some(InputRequest::GoToNextChar),
@@ -370,10 +406,22 @@ impl Model {
             });
         request_builder = request_builder.body(self.body_string());
 
-        match request_builder.send() {
-            Ok(response) => self.output_text = response.text().expect("Error unwrapping body"),
-            Err(error) => self.output_text = format!("{:?}", error),
+        let output = match request_builder.send() {
+            Ok(response) => response
+                .text()
+                .unwrap_or("Error unwrapping body".to_string()),
+            Err(error) => format!("{:?}", error),
         };
+
+        self.output_textarea = TextArea::from(output.lines());
+
+        self.output_inputs = NonEmpty::from_vec(
+            output
+                .split('\n')
+                .map(|line| Input::new(line.to_string()))
+                .collect(),
+        )
+        .unwrap_or(nonempty![Input::default()]);
     }
 
     pub fn current_input_table(&self) -> &NonEmpty<InputRow> {
@@ -391,7 +439,7 @@ impl Model {
                 InputField::Key => &self.current_input_row().key,
                 InputField::Value => &self.current_input_row().value,
             },
-            Panel::Output => &self.output_input,
+            Panel::Output => &self.output_inputs[self.output_row],
         }
     }
 
@@ -403,7 +451,7 @@ impl Model {
                 InputField::Key => &mut self.current_input_row_mut().key,
                 InputField::Value => &mut self.current_input_row_mut().value,
             },
-            Panel::Output => &mut self.output_input,
+            Panel::Output => &mut self.output_inputs[self.output_row],
         }
     }
 
