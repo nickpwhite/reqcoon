@@ -1,6 +1,6 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout},
-    style::{Color, Modifier, Style, Stylize},
+    style::{Color, Style, Stylize},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Padding, Paragraph, Row, Table, TableState, Widget},
     Frame,
@@ -63,14 +63,16 @@ pub fn view(f: &mut Frame, model: &mut Model) {
             )
         }
         Panel::Output => {
+            let (scroll_row, scroll_col) = model.output_textarea.viewport.scroll_top();
             let (row, col) = model.output_textarea.cursor();
-            (col as u16 + 1, row as u16 + output_section.y + 1)
+            (
+                col as u16 - scroll_col + 1,
+                row as u16 - scroll_row + output_section.y + 1,
+            )
         }
     };
 
-    if model.current_panel != Panel::Output {
-        f.set_cursor(col, row);
-    }
+    f.set_cursor(col, row);
 }
 
 fn active_style() -> Style {
@@ -190,13 +192,7 @@ fn output_block(model: &mut Model) -> impl Widget + '_ {
     model
         .output_textarea
         .set_cursor_line_style(Style::default());
-    if model.current_panel == Panel::Output {
-        model
-            .output_textarea
-            .set_cursor_style(Style::default().add_modifier(Modifier::REVERSED));
-    } else {
-        model.output_textarea.set_cursor_style(Style::default());
-    }
+    model.output_textarea.set_cursor_style(Style::default());
     model.output_textarea.set_block(output_block);
 
     model.output_textarea.widget()
