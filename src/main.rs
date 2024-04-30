@@ -147,11 +147,10 @@ fn globally_pre_handle_insert_key(key: KeyEvent) -> Option<Message> {
             KeyCode::Char('c') => Some(Message::Quit),
             _ => None,
         },
-        KeyModifiers::NONE => match key.code {
+        _ => match key.code {
             KeyCode::Esc => Some(Message::Normal),
             _ => Some(Message::InsertInput(Event::Key(key))),
         },
-        _ => None,
     }
 }
 
