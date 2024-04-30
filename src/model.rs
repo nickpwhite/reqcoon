@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt;
 use std::fs::File;
 use std::io::{self, Read, Write};
@@ -57,6 +58,22 @@ impl fmt::Display for InputType {
     }
 }
 
+#[derive(Default, Sequence)]
+pub enum BodyFormat {
+    #[default]
+    Json,
+    Form,
+}
+
+impl fmt::Display for BodyFormat {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            BodyFormat::Json => write!(f, "JSON"),
+            BodyFormat::Form => write!(f, "Form"),
+        }
+    }
+}
+
 #[derive(Default, PartialEq, Sequence)]
 pub enum InputField {
     #[default]
@@ -76,6 +93,12 @@ impl InputRow {
     }
 }
 
+impl Into<(String, String)> for &InputRow {
+    fn into(self) -> (String, String) {
+        (self.key.value().to_string(), self.value.value().to_string())
+    }
+}
+
 #[derive(Parser)]
 #[grammar = "http.pest"]
 struct RequestParser;
@@ -90,6 +113,7 @@ pub struct Model {
     pub url_input: Input,
     pub current_input_type: InputType,
     pub current_input_field: InputField,
+    pub current_body_format: BodyFormat,
     pub input_index: usize,
     pub headers_input_table: NonEmpty<InputRow>,
     pub body_input_table: NonEmpty<InputRow>,
@@ -111,7 +135,8 @@ impl Model {
             method_input: Input::default(),
             url_input: Input::default(),
             current_input_type: InputType::default(),
-            current_input_field: InputField::Key,
+            current_input_field: InputField::default(),
+            current_body_format: BodyFormat::default(),
             input_index: 0,
             headers_input_table: nonempty![InputRow::default()],
             body_input_table: nonempty![InputRow::default()],
@@ -177,7 +202,8 @@ impl Model {
             method_input: Input::default(),
             url_input: Input::from(uri),
             current_input_type: InputType::default(),
-            current_input_field: InputField::Key,
+            current_input_field: InputField::default(),
+            current_body_format: BodyFormat::default(),
             input_index: 0,
             headers_input_table: NonEmpty::from_vec(headers_input)
                 .unwrap_or(nonempty![InputRow::default()]),
@@ -395,6 +421,24 @@ impl Model {
             .unwrap_or(InputField::last().unwrap());
     }
 
+    pub fn next_body_format(&mut self) {
+        self.current_body_format = self.current_body_format.next().unwrap_or_default();
+    }
+
+    pub fn previous_body_format(&mut self) {
+        self.current_body_format = self
+            .current_body_format
+            .previous()
+            .unwrap_or(BodyFormat::last().unwrap());
+    }
+
+    pub fn current_input_table(&self) -> &NonEmpty<InputRow> {
+        match self.current_input_type {
+            InputType::Headers => &self.headers_input_table,
+            InputType::Body => &self.body_input_table,
+        }
+    }
+
     pub fn submit_request(&mut self) {
         let url = Url::parse(&self.url_input.value()).expect("Invalid URL");
         let mut request_builder = Client::new().request(self.current_method.clone(), url);
@@ -404,7 +448,10 @@ impl Model {
             .fold(request_builder, |builder, InputRow { key, value }| {
                 builder.header(key.value(), value.value())
             });
-        request_builder = request_builder.body(self.body_string());
+        request_builder = match self.current_body_format {
+            BodyFormat::Json => request_builder.json(&self.body_hash_map()),
+            BodyFormat::Form => request_builder.form(&self.body_hash_map()),
+        };
 
         let output = match request_builder.send() {
             Ok(response) => response
@@ -422,13 +469,6 @@ impl Model {
                 .collect(),
         )
         .unwrap_or(nonempty![Input::default()]);
-    }
-
-    pub fn current_input_table(&self) -> &NonEmpty<InputRow> {
-        match self.current_input_type {
-            InputType::Headers => &self.headers_input_table,
-            InputType::Body => &self.body_input_table,
-        }
     }
 
     fn current_input(&self) -> &Input {
@@ -490,10 +530,19 @@ impl Model {
     }
 
     fn body_string(&self) -> String {
-        let mut object = object! {};
-        self.non_empty_body()
-            .for_each(|InputRow { key, value }| object[key.value()] = value.value().into());
+        match self.current_body_format {
+            BodyFormat::Json => {
+                let mut object = object! {};
+                self.non_empty_body()
+                    .for_each(|InputRow { key, value }| object[key.value()] = value.value().into());
 
-        object.dump()
+                object.dump()
+            }
+            BodyFormat::Form => "".to_string(),
+        }
+    }
+
+    fn body_hash_map(&self) -> HashMap<String, String> {
+        self.non_empty_body().map(|row| row.into()).collect()
     }
 }

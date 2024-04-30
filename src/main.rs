@@ -47,6 +47,8 @@ enum Message {
     PreviousInputType,
     NextInputField,
     PreviousInputField,
+    NextBodyFormat,
+    PreviousBodyFormat,
 
     // Submission
     SubmitRequest,
@@ -72,7 +74,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         terminal.draw(|f| view(f, &mut model))?;
 
-        let mut current_message = handle_event(&model);
+        let mut current_message = handle_event(&mut model);
 
         while current_message.is_some() {
             current_message = update(&mut model, current_message.unwrap());
@@ -85,7 +87,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn handle_event(model: &Model) -> Option<Message> {
+fn handle_event(model: &mut Model) -> Option<Message> {
     if event::poll(Duration::from_millis(250)).expect("Unable to poll events") {
         if let Ok(Event::Key(key)) = event::read() {
             if key.kind == KeyEventKind::Press {
@@ -169,6 +171,12 @@ fn handle_normal_input_key(key: KeyEvent) -> Option<Message> {
     match key.code {
         KeyCode::Right if key.modifiers == KeyModifiers::SHIFT => Some(Message::NextInputType),
         KeyCode::Left if key.modifiers == KeyModifiers::SHIFT => Some(Message::PreviousInputType),
+        KeyCode::Right if key.modifiers == KeyModifiers::SHIFT | KeyModifiers::CONTROL => {
+            Some(Message::NextBodyFormat)
+        }
+        KeyCode::Left if key.modifiers == KeyModifiers::SHIFT | KeyModifiers::CONTROL => {
+            Some(Message::PreviousBodyFormat)
+        }
         KeyCode::Tab => Some(Message::NextInputField),
         KeyCode::BackTab => Some(Message::PreviousInputField),
         _ => None,
@@ -210,6 +218,8 @@ fn update(model: &mut Model, msg: Message) -> Option<Message> {
         Message::PreviousInputType => model.previous_input_type(),
         Message::NextInputField => model.next_input_field(),
         Message::PreviousInputField => model.previous_input_field(),
+        Message::NextBodyFormat => model.next_body_format(),
+        Message::PreviousBodyFormat => model.previous_body_format(),
         Message::SubmitRequest => model.submit_request(),
         Message::Quit => model.exit = true,
     };

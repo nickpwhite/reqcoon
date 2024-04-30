@@ -12,11 +12,12 @@ enum-iterator = "1.5.0"
 http = "1.0.0"
 json = "0.12.4"
 log = "0.4"
-nonempty = "0.10.0"
+nonempty = { version = "0.10.0", features = ["serde"] }
 pest = "2.7"
 pest_derive = "2.7"
-ratatui = "0.26.0"
-reqwest = { version = "0.11", features = ["blocking"] }
+ratatui = "0.26.2"
+reqwest = { version = "0.11", features = ["blocking", "json"] }
+serde = "1.0"
 simple-logging = "2.0"
 tui-input = "0.8.0"
 tui-textarea = "0.4"

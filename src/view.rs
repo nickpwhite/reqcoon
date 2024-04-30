@@ -7,7 +7,7 @@ use ratatui::{
 };
 
 use crate::{
-    model::{InputField, InputType, Model, Panel},
+    model::{BodyFormat, InputField, InputType, Model, Panel},
     text_wrapping::{truncate_ellipse, wrap_string},
 };
 
@@ -29,12 +29,6 @@ pub fn view(f: &mut Frame, model: &mut Model) {
         .areas(top_section);
 
     let input_field_width = (input_section.width - 6) / 2 - 1;
-
-    model.message = format!(
-        "cursor.row: {}, row: {}",
-        model.output_textarea.cursor().0,
-        model.output_textarea.cursor().0 as u16 + output_section.y + 1
-    );
 
     f.render_widget(method_block(model), method_section);
     f.render_widget(url_block(model), url_section);
@@ -122,6 +116,7 @@ fn input_block(model: &Model, field_width: usize) -> Table {
 
     let input_block = Block::default()
         .title(input_title(model))
+        .title_bottom(input_footer(model))
         .borders(Borders::ALL)
         .border_style(style)
         .padding(Padding::proportional(1));
@@ -175,6 +170,29 @@ fn input_title(model: &Model) -> Line<'static> {
         body_title,
         Span::styled(" |", Color::White),
     ])
+}
+
+fn input_footer(model: &Model) -> Line<'static> {
+    let mut json_title = BodyFormat::Json.to_string().white();
+    let mut form_title = BodyFormat::Form.to_string().white();
+    if model.current_panel == Panel::Input {
+        match model.current_body_format {
+            BodyFormat::Json => json_title = json_title.blue(),
+            BodyFormat::Form => form_title = form_title.blue(),
+        };
+    }
+
+    if model.current_input_type == InputType::Body {
+        Line::default().spans(vec![
+            Span::styled("| ", Color::White),
+            json_title,
+            Span::styled(" | ", Color::White),
+            form_title,
+            Span::styled(" |", Color::White),
+        ])
+    } else {
+        Line::default()
+    }
 }
 
 fn output_block(model: &mut Model) -> impl Widget + '_ {
