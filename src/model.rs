@@ -358,7 +358,7 @@ impl Model {
 
             match input_event {
                 Some(event) => self.output_textarea.input(event),
-                None => self.output_textarea.input(key_event),
+                None => false,
             };
 
             return;
