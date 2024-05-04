@@ -57,8 +57,8 @@ pub fn view(f: &mut Frame, model: &mut Model) {
             )
         }
         Panel::Output => {
-            let (scroll_row, scroll_col) = model.output_textarea.viewport.scroll_top();
-            let (row, col) = model.output_textarea.cursor();
+            let (scroll_row, scroll_col) = model.output_input.viewport.scroll_top();
+            let (row, col) = model.output_input.cursor();
             (
                 col as u16 - scroll_col + 1,
                 row as u16 - scroll_row + output_section.y + 1,
@@ -92,7 +92,7 @@ fn method_block(model: &Model) -> Paragraph {
     .block(method_block)
 }
 
-fn url_block(model: &Model) -> Paragraph {
+fn url_block(model: &mut Model) -> impl Widget + '_ {
     let style = if model.current_panel == Panel::Url {
         active_style()
     } else {
@@ -104,7 +104,9 @@ fn url_block(model: &Model) -> Paragraph {
         .borders(Borders::ALL)
         .border_style(style);
 
-    Paragraph::new(model.url_input.value()).block(url_block)
+    model.url_input.set_block(url_block);
+
+    model.url_input.widget()
 }
 
 fn input_block(model: &Model, field_width: usize) -> Table {
@@ -126,26 +128,29 @@ fn input_block(model: &Model, field_width: usize) -> Table {
         .iter()
         .enumerate()
         .map(|(i, input_row)| {
-            let (key, value) = if model.current_panel == Panel::Input && model.input_index == i {
-                match model.current_input_field {
-                    InputField::Key => (
-                        wrap_string(input_row.key.value(), field_width),
-                        truncate_ellipse(input_row.value.value(), field_width),
-                    ),
-                    InputField::Value => (
-                        truncate_ellipse(input_row.key.value(), field_width),
-                        wrap_string(input_row.value.value(), field_width),
-                    ),
-                }
-            } else {
-                (
-                    truncate_ellipse(input_row.key.value(), field_width),
-                    truncate_ellipse(input_row.value.value(), field_width),
-                )
-            };
+            let key = &input_row.key.lines()[0];
+            let value = &input_row.value.lines()[0];
+            let (formatted_key, formatted_value) =
+                if model.current_panel == Panel::Input && model.input_index == i {
+                    match model.current_input_field {
+                        InputField::Key => (
+                            wrap_string(&key, field_width),
+                            truncate_ellipse(&value, field_width),
+                        ),
+                        InputField::Value => (
+                            truncate_ellipse(&key, field_width),
+                            wrap_string(&value, field_width),
+                        ),
+                    }
+                } else {
+                    (
+                        truncate_ellipse(&key, field_width),
+                        truncate_ellipse(&value, field_width),
+                    )
+                };
             let height = std::cmp::max(key.lines().count(), value.lines().count()) as u16;
 
-            Row::new(vec![key, value]).height(height)
+            Row::new(vec![formatted_key, formatted_value]).height(height)
         })
         .collect::<Table>()
         .widths([Constraint::Percentage(50), Constraint::Percentage(50)])
@@ -207,13 +212,11 @@ fn output_block(model: &mut Model) -> impl Widget + '_ {
         .borders(Borders::ALL)
         .border_style(style);
 
-    model
-        .output_textarea
-        .set_cursor_line_style(Style::default());
-    model.output_textarea.set_cursor_style(Style::default());
-    model.output_textarea.set_block(output_block);
+    model.output_input.set_cursor_line_style(Style::default());
+    model.output_input.set_cursor_style(Style::default());
+    model.output_input.set_block(output_block);
 
-    model.output_textarea.widget()
+    model.output_input.widget()
 }
 
 fn mode_block(model: &Model) -> Paragraph {

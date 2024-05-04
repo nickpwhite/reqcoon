@@ -4,16 +4,15 @@ use std::fs::File;
 use std::io::{self, Read, Write};
 use std::iter::Iterator;
 
-use crossterm::event::{Event, KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent};
 use enum_iterator::Sequence;
-use json::object;
+use json::JsonValue;
 use nonempty::{nonempty, NonEmpty};
 use pest::Parser;
 use pest_derive::Parser;
 use ratatui::widgets::ListState;
 use reqwest::{blocking::Client, Method, Url};
-use tui_input::{backend::crossterm::EventHandler, Input, InputRequest};
-use tui_textarea::TextArea;
+use tui_textarea::{CursorMove, TextArea};
 
 use crate::tmux::{select_tmux_panel, Direction};
 
@@ -83,19 +82,22 @@ pub enum InputField {
 
 #[derive(Default)]
 pub struct InputRow {
-    pub key: Input,
-    pub value: Input,
+    pub key: TextArea<'static>,
+    pub value: TextArea<'static>,
 }
 
 impl InputRow {
     fn is_empty(&self) -> bool {
-        self.key.value().is_empty() && self.value.value().is_empty()
+        self.key.is_empty() && self.value.is_empty()
     }
 }
 
 impl Into<(String, String)> for &InputRow {
     fn into(self) -> (String, String) {
-        (self.key.value().to_string(), self.value.value().to_string())
+        (
+            self.key.lines()[0].to_string(),
+            self.value.lines()[0].to_string(),
+        )
     }
 }
 
@@ -109,17 +111,16 @@ pub struct Model {
     pub current_panel: Panel,
     pub list_state: ListState,
     pub current_method: Method,
-    pub method_input: Input,
-    pub url_input: Input,
+    pub method_input: TextArea<'static>,
+    pub url_input: TextArea<'static>,
     pub current_input_type: InputType,
     pub current_input_field: InputField,
     pub current_body_format: BodyFormat,
     pub input_index: usize,
     pub headers_input_table: NonEmpty<InputRow>,
     pub body_input_table: NonEmpty<InputRow>,
-    pub output_inputs: NonEmpty<Input>,
     pub output_row: usize,
-    pub output_textarea: TextArea<'static>,
+    pub output_input: TextArea<'static>,
     pub message: String,
     pub exit: bool,
 }
@@ -132,17 +133,16 @@ impl Model {
             current_panel: Panel::default(),
             list_state: ListState::default().with_selected(Some(0)),
             current_method: Method::GET,
-            method_input: Input::default(),
-            url_input: Input::default(),
+            method_input: TextArea::default(),
+            url_input: TextArea::default(),
             current_input_type: InputType::default(),
             current_input_field: InputField::default(),
             current_body_format: BodyFormat::default(),
             input_index: 0,
             headers_input_table: nonempty![InputRow::default()],
             body_input_table: nonempty![InputRow::default()],
-            output_inputs: nonempty![Input::default()],
             output_row: 0,
-            output_textarea: TextArea::default(),
+            output_input: TextArea::default(),
             message: String::default(),
             exit: false,
         }
@@ -175,8 +175,8 @@ impl Model {
                             }
                         }
                         headers_input.push(InputRow {
-                            key: key.into(),
-                            value: value.into(),
+                            key: [key].into(),
+                            value: [value].into(),
                         });
                     }
                 }
@@ -184,8 +184,8 @@ impl Model {
                     let object = json::parse(pair.as_str())?;
                     for (key, value) in object.entries() {
                         body_input.push(InputRow {
-                            key: key.into(),
-                            value: value.as_str().unwrap().into(),
+                            key: [key].into(),
+                            value: [value.as_str().unwrap()].into(),
                         })
                     }
                 }
@@ -199,8 +199,8 @@ impl Model {
             current_panel: Panel::default(),
             list_state: ListState::default().with_selected(Some(0)),
             current_method: method,
-            method_input: Input::default(),
-            url_input: Input::from(uri),
+            method_input: TextArea::default(),
+            url_input: TextArea::from([uri]),
             current_input_type: InputType::default(),
             current_input_field: InputField::default(),
             current_body_format: BodyFormat::default(),
@@ -209,16 +209,15 @@ impl Model {
                 .unwrap_or(nonempty![InputRow::default()]),
             body_input_table: NonEmpty::from_vec(body_input)
                 .unwrap_or(nonempty![InputRow::default()]),
-            output_inputs: nonempty![Input::default()],
             output_row: 0,
-            output_textarea: TextArea::default(),
+            output_input: TextArea::default(),
             message: String::default(),
             exit: false,
         })
     }
 
     pub fn to_file(&self) -> io::Result<()> {
-        let mut output = format!("{} {}", self.current_method, self.url_input.value());
+        let mut output = format!("{} {}", self.current_method, self.url_input.lines()[0]);
         if !self.headers_string().is_empty() {
             output.push_str("\n");
             output.push_str(&self.headers_string());
@@ -234,7 +233,7 @@ impl Model {
 
     pub fn append(&mut self) {
         self.current_mode = Mode::Insert;
-        self.current_input_mut().handle(InputRequest::GoToNextChar);
+        self.current_input_mut().move_cursor(CursorMove::Forward);
     }
 
     pub fn insert(&mut self) {
@@ -243,7 +242,7 @@ impl Model {
 
     pub fn normal(&mut self) {
         self.current_mode = Mode::Normal;
-        self.current_input_mut().handle(InputRequest::GoToPrevChar);
+        self.current_input_mut().move_cursor(CursorMove::Back);
     }
 
     pub fn select_panel_left(&mut self) {
@@ -327,56 +326,33 @@ impl Model {
     }
 
     pub fn cursor_col(&self) -> u16 {
-        self.current_input().visual_cursor() as u16
+        self.current_input().cursor().1 as u16
     }
 
-    pub fn handle_insert_input(&mut self, event: Event) {
-        self.current_input_mut().handle_event(&event);
+    pub fn handle_insert_input(&mut self, event: KeyEvent) {
+        self.current_input_mut().input(event);
     }
 
     pub fn handle_normal_input(&mut self, key_event: KeyEvent) {
-        if self.current_panel == Panel::Output {
-            let input_event = match key_event.code {
-                KeyCode::Char('j') => Some(KeyEvent {
-                    code: KeyCode::Down,
-                    ..key_event
-                }),
-                KeyCode::Char('k') => Some(KeyEvent {
-                    code: KeyCode::Up,
-                    ..key_event
-                }),
-                KeyCode::Char('h') => Some(KeyEvent {
-                    code: KeyCode::Left,
-                    ..key_event
-                }),
-                KeyCode::Char('l') => Some(KeyEvent {
-                    code: KeyCode::Right,
-                    ..key_event
-                }),
-                _ => None,
-            };
-
-            match input_event {
-                Some(event) => self.output_textarea.input(event),
-                None => false,
-            };
-
-            return;
-        }
-
-        let input_request = match key_event.code {
-            KeyCode::Char('h') | KeyCode::Left => Some(InputRequest::GoToPrevChar),
-            KeyCode::Char('l') | KeyCode::Right => Some(InputRequest::GoToNextChar),
-            KeyCode::Char('b') => Some(InputRequest::GoToPrevWord),
-            KeyCode::Char('w') => Some(InputRequest::GoToNextWord),
-            KeyCode::Char('^') | KeyCode::Home => Some(InputRequest::GoToStart),
-            KeyCode::Char('$') | KeyCode::End => Some(InputRequest::GoToEnd),
+        let cursor_move = match key_event.code {
+            KeyCode::Char('h') | KeyCode::Left => Some(CursorMove::Back),
+            KeyCode::Char('l') | KeyCode::Right => Some(CursorMove::Forward),
+            KeyCode::Char('b') => Some(CursorMove::WordBack),
+            KeyCode::Char('w') => Some(CursorMove::WordForward),
+            KeyCode::Char('^') | KeyCode::Home => Some(CursorMove::Head),
+            KeyCode::Char('$') | KeyCode::End => Some(CursorMove::End),
+            KeyCode::Char('j') | KeyCode::Down if self.current_panel != Panel::Output => {
+                Some(CursorMove::Down)
+            }
+            KeyCode::Char('k') | KeyCode::Up if self.current_panel != Panel::Output => {
+                Some(CursorMove::Up)
+            }
             _ => None,
         };
 
-        match input_request {
-            Some(request) => self.current_input_mut().handle(request),
-            _ => None,
+        match cursor_move {
+            Some(request) => self.current_input_mut().move_cursor(request),
+            _ => (),
         };
     }
 
@@ -440,13 +416,13 @@ impl Model {
     }
 
     pub fn submit_request(&mut self) {
-        let url = Url::parse(&self.url_input.value()).expect("Invalid URL");
+        let url = Url::parse(&self.url_input.lines()[0]).expect("Invalid URL");
         let mut request_builder = Client::new().request(self.current_method.clone(), url);
 
         request_builder = self
             .non_empty_headers()
             .fold(request_builder, |builder, InputRow { key, value }| {
-                builder.header(key.value(), value.value())
+                builder.header(&key.lines()[0], &value.lines()[0])
             });
         request_builder = match self.current_body_format {
             BodyFormat::Json => request_builder.json(&self.body_hash_map()),
@@ -460,18 +436,10 @@ impl Model {
             Err(error) => format!("{:?}", error),
         };
 
-        self.output_textarea = TextArea::from(output.lines());
-
-        self.output_inputs = NonEmpty::from_vec(
-            output
-                .split('\n')
-                .map(|line| Input::new(line.to_string()))
-                .collect(),
-        )
-        .unwrap_or(nonempty![Input::default()]);
+        self.output_input = TextArea::from(output.lines());
     }
 
-    fn current_input(&self) -> &Input {
+    fn current_input(&self) -> &TextArea<'static> {
         match self.current_panel {
             Panel::Method => &self.method_input,
             Panel::Url => &self.url_input,
@@ -479,11 +447,11 @@ impl Model {
                 InputField::Key => &self.current_input_row().key,
                 InputField::Value => &self.current_input_row().value,
             },
-            Panel::Output => &self.output_inputs[self.output_row],
+            Panel::Output => &self.output_input,
         }
     }
 
-    fn current_input_mut(&mut self) -> &mut Input {
+    fn current_input_mut(&mut self) -> &mut TextArea<'static> {
         match self.current_panel {
             Panel::Method => &mut self.method_input,
             Panel::Url => &mut self.url_input,
@@ -491,7 +459,7 @@ impl Model {
                 InputField::Key => &mut self.current_input_row_mut().key,
                 InputField::Value => &mut self.current_input_row_mut().value,
             },
-            Panel::Output => &mut self.output_inputs[self.output_row],
+            Panel::Output => &mut self.output_input,
         }
     }
 
@@ -514,30 +482,37 @@ impl Model {
     fn non_empty_headers(&self) -> impl Iterator<Item = &InputRow> {
         self.headers_input_table
             .iter()
-            .filter(|header| !header.key.value().is_empty())
+            .filter(|header| !header.key.is_empty())
     }
 
     fn headers_string(&self) -> String {
         self.non_empty_headers()
-            .map(|input_row| format!("{}: {}", input_row.key.value(), input_row.value.value()))
+            .map(|input_row| {
+                format!(
+                    "{}: {}",
+                    input_row.key.lines()[0],
+                    input_row.value.lines()[0]
+                )
+            })
             .collect()
     }
 
     fn non_empty_body(&self) -> impl Iterator<Item = &InputRow> {
         self.body_input_table
             .iter()
-            .filter(|body_pair| !body_pair.key.value().is_empty())
+            .filter(|body_pair| !body_pair.key.is_empty())
     }
 
     fn body_string(&self) -> String {
         match self.current_body_format {
-            BodyFormat::Json => {
-                let mut object = object! {};
+            BodyFormat::Json => JsonValue::Object(
                 self.non_empty_body()
-                    .for_each(|InputRow { key, value }| object[key.value()] = value.value().into());
-
-                object.dump()
-            }
+                    .map(|InputRow { key, value }| {
+                        (key.lines()[0].clone(), value.lines()[0].clone())
+                    })
+                    .collect(),
+            )
+            .dump(),
             BodyFormat::Form => "".to_string(),
         }
     }

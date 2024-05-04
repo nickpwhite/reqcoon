@@ -39,7 +39,7 @@ enum Message {
     PreviousMethod,
 
     // Input
-    InsertInput(Event),
+    InsertInput(KeyEvent),
     NormalInput(KeyEvent),
 
     // Input input
@@ -149,7 +149,7 @@ fn globally_pre_handle_insert_key(key: KeyEvent) -> Option<Message> {
         },
         _ => match key.code {
             KeyCode::Esc => Some(Message::Normal),
-            _ => Some(Message::InsertInput(Event::Key(key))),
+            _ => Some(Message::InsertInput(key)),
         },
     }
 }
@@ -211,7 +211,7 @@ fn update(model: &mut Model, msg: Message) -> Option<Message> {
         Message::SelectPanelRight => model.select_panel_right(),
         Message::NextMethod => model.next_method(),
         Message::PreviousMethod => model.previous_method(),
-        Message::InsertInput(event) => model.handle_insert_input(event),
+        Message::InsertInput(key_event) => model.handle_insert_input(key_event),
         Message::NormalInput(key_event) => model.handle_normal_input(key_event),
         Message::NextInputType => model.next_input_type(),
         Message::PreviousInputType => model.previous_input_type(),
