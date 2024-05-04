@@ -104,6 +104,8 @@ fn url_block(model: &mut Model) -> impl Widget + '_ {
         .borders(Borders::ALL)
         .border_style(style);
 
+    model.url_input.set_cursor_line_style(Style::default());
+    model.url_input.set_cursor_style(Style::default());
     model.url_input.set_block(url_block);
 
     model.url_input.widget()
