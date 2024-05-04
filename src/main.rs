@@ -81,9 +81,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
+    tui::restore_terminal();
     model.to_file()?;
 
-    tui::restore_terminal();
     Ok(())
 }
 
