@@ -4,6 +4,7 @@ use clap::Parser;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use log::LevelFilter;
 
+mod input;
 mod model;
 mod text_wrapping;
 mod tmux;
