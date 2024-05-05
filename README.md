@@ -17,6 +17,7 @@ Reqcoon is a TUI http client, useful for testing APIs and making HTTP requests.
 | Normal | all          | \^l  | Move to pane right             |
 | Normal | all          | i    | Enter insert mode              |
 | Normal | all          | a    | Enter insert mode, appending   |
+| Normal | all          | v    | Enter visual mode
 | Normal | all          | ↵    | Send specified request         |
 | Normal | Method       | j    | Select next method             |
 | Normal | Method       | k    | Select previous method         |
@@ -34,6 +35,8 @@ Reqcoon is a TUI http client, useful for testing APIs and making HTTP requests.
 | Normal | text fields  | w    | Move cursor to next word       |
 | Normal | text fields  | ^    | Move cursor to start of line   |
 | Normal | text fields  | $    | Move cursor to end of line     |
+| Visual | all          | ⎋    | Enter normal mode              |
+| Visual | text fields  | y    | Copy selected text             |
 | Insert | all          | ⎋    | Enter normal mode              |
 | Insert | all          | \^c  | Exit the application           |
 
