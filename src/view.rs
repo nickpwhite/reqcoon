@@ -150,7 +150,10 @@ fn input_block(model: &Model, field_width: usize) -> Table {
                         truncate_ellipse(&value, field_width),
                     )
                 };
-            let height = std::cmp::max(key.lines().count(), value.lines().count()) as u16;
+            let height = std::cmp::max(
+                formatted_key.lines().count(),
+                formatted_value.lines().count(),
+            ) as u16;
 
             Row::new(vec![formatted_key, formatted_value]).height(height)
         })

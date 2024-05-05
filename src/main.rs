@@ -26,7 +26,10 @@ enum Message {
     // Mode
     Append,
     Insert,
+    LeaveInsert,
     Normal,
+    Visual,
+    LeaveVisual,
 
     // Navigation
     SelectPanelLeft,
@@ -39,6 +42,7 @@ enum Message {
     PreviousMethod,
 
     // Input
+    Copy,
     InsertInput(KeyEvent),
     NormalInput(KeyEvent),
 
@@ -68,7 +72,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     while model.exit == false {
         match model.current_mode {
-            Mode::Normal => tui::set_cursor_block(),
+            Mode::Normal | Mode::Visual => tui::set_cursor_block(),
             Mode::Insert => tui::set_cursor_bar(),
         };
 
@@ -94,6 +98,7 @@ fn handle_event(model: &mut Model) -> Option<Message> {
                 match model.current_mode {
                     Mode::Normal => handle_normal_key(key, model),
                     Mode::Insert => handle_insert_key(key),
+                    Mode::Visual => handle_visual_key(key),
                 }
             } else {
                 None
@@ -120,7 +125,34 @@ fn handle_normal_key(key: KeyEvent, model: &Model) -> Option<Message> {
 }
 
 fn handle_insert_key(key: KeyEvent) -> Option<Message> {
-    globally_pre_handle_insert_key(key).or_else(|| globally_post_handle_insert_key(key))
+    match key {
+        KeyEvent {
+            code: KeyCode::Char('c'),
+            modifiers: KeyModifiers::CONTROL,
+            ..
+        } => Some(Message::Quit),
+        KeyEvent {
+            code: KeyCode::Esc, ..
+        } => Some(Message::LeaveInsert),
+        KeyEvent {
+            code: KeyCode::Enter,
+            ..
+        } => Some(Message::SubmitRequest),
+        _ => Some(Message::InsertInput(key)),
+    }
+}
+
+fn handle_visual_key(key: KeyEvent) -> Option<Message> {
+    match key {
+        KeyEvent {
+            code: KeyCode::Esc, ..
+        } => Some(Message::LeaveVisual),
+        KeyEvent {
+            code: KeyCode::Char('y'),
+            ..
+        } => Some(Message::Copy),
+        _ => Some(Message::NormalInput(key)),
+    }
 }
 
 fn globally_pre_handle_normal_key(key: KeyEvent) -> Option<Message> {
@@ -135,22 +167,10 @@ fn globally_pre_handle_normal_key(key: KeyEvent) -> Option<Message> {
         KeyModifiers::NONE => match key.code {
             KeyCode::Char('a') => Some(Message::Append),
             KeyCode::Char('i') => Some(Message::Insert),
+            KeyCode::Char('v') => Some(Message::Visual),
             _ => None,
         },
         _ => None,
-    }
-}
-
-fn globally_pre_handle_insert_key(key: KeyEvent) -> Option<Message> {
-    match key.modifiers {
-        KeyModifiers::CONTROL => match key.code {
-            KeyCode::Char('c') => Some(Message::Quit),
-            _ => None,
-        },
-        _ => match key.code {
-            KeyCode::Esc => Some(Message::Normal),
-            _ => Some(Message::InsertInput(key)),
-        },
     }
 }
 
@@ -186,13 +206,6 @@ fn handle_normal_output_key(_key: KeyEvent) -> Option<Message> {
     None
 }
 
-fn globally_post_handle_insert_key(key: KeyEvent) -> Option<Message> {
-    match key.code {
-        KeyCode::Enter => Some(Message::SubmitRequest),
-        _ => None,
-    }
-}
-
 fn globally_post_handle_normal_key(key: KeyEvent) -> Option<Message> {
     match key.code {
         KeyCode::Enter => Some(Message::SubmitRequest),
@@ -204,13 +217,26 @@ fn update(model: &mut Model, msg: Message) -> Option<Message> {
     match msg {
         Message::Append => model.append(),
         Message::Insert => model.insert(),
+        Message::LeaveInsert => {
+            model.leave_insert();
+            return Some(Message::Normal);
+        }
         Message::Normal => model.normal(),
+        Message::Visual => model.visual(),
+        Message::LeaveVisual => {
+            model.leave_visual();
+            return Some(Message::Normal);
+        }
         Message::SelectPanelLeft => model.select_panel_left(),
         Message::SelectPanelDown => model.select_panel_down(),
         Message::SelectPanelUp => model.select_panel_up(),
         Message::SelectPanelRight => model.select_panel_right(),
         Message::NextMethod => model.next_method(),
         Message::PreviousMethod => model.previous_method(),
+        Message::Copy => {
+            model.copy();
+            return Some(Message::Normal);
+        }
         Message::InsertInput(key_event) => model.handle_insert_input(key_event),
         Message::NormalInput(key_event) => model.handle_normal_input(key_event),
         Message::NextInputType => model.next_input_type(),

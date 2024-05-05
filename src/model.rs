@@ -4,6 +4,7 @@ use std::fs::File;
 use std::io::{self, Read, Write};
 use std::iter::Iterator;
 
+use clippers::Clipboard;
 use crossterm::event::{KeyCode, KeyEvent};
 use enum_iterator::Sequence;
 use json::JsonValue;
@@ -21,6 +22,7 @@ pub enum Mode {
     #[default]
     Normal,
     Insert,
+    Visual,
 }
 
 impl fmt::Display for Mode {
@@ -28,6 +30,7 @@ impl fmt::Display for Mode {
         match self {
             Mode::Normal => write!(f, "Normal"),
             Mode::Insert => write!(f, "Insert"),
+            Mode::Visual => write!(f, "Visual"),
         }
     }
 }
@@ -240,9 +243,21 @@ impl Model {
         self.current_mode = Mode::Insert;
     }
 
+    pub fn leave_insert(&mut self) {
+        self.current_input_mut().move_cursor(CursorMove::Back);
+    }
+
     pub fn normal(&mut self) {
         self.current_mode = Mode::Normal;
-        self.current_input_mut().move_cursor(CursorMove::Back);
+    }
+
+    pub fn visual(&mut self) {
+        self.current_mode = Mode::Visual;
+        self.current_input_mut().start_selection();
+    }
+
+    pub fn leave_visual(&mut self) {
+        self.current_input_mut().cancel_selection();
     }
 
     pub fn select_panel_left(&mut self) {
@@ -329,6 +344,14 @@ impl Model {
         self.current_input().cursor().1 as u16
     }
 
+    pub fn copy(&mut self) {
+        self.current_input_mut().copy();
+        match Clipboard::get().write_text(self.current_input().yank_text()) {
+            Ok(_) => (),
+            Err(err) => self.message = format!("Unable to save to system clipboard: {:?}", err),
+        }
+    }
+
     pub fn handle_insert_input(&mut self, event: KeyEvent) {
         self.current_input_mut().input(event);
     }
@@ -341,10 +364,10 @@ impl Model {
             KeyCode::Char('w') => Some(CursorMove::WordForward),
             KeyCode::Char('^') | KeyCode::Home => Some(CursorMove::Head),
             KeyCode::Char('$') | KeyCode::End => Some(CursorMove::End),
-            KeyCode::Char('j') | KeyCode::Down if self.current_panel != Panel::Output => {
+            KeyCode::Char('j') | KeyCode::Down if self.current_panel == Panel::Output => {
                 Some(CursorMove::Down)
             }
-            KeyCode::Char('k') | KeyCode::Up if self.current_panel != Panel::Output => {
+            KeyCode::Char('k') | KeyCode::Up if self.current_panel == Panel::Output => {
                 Some(CursorMove::Up)
             }
             _ => None,
@@ -352,7 +375,7 @@ impl Model {
 
         match cursor_move {
             Some(request) => self.current_input_mut().move_cursor(request),
-            _ => (),
+            None => (),
         };
     }
 
