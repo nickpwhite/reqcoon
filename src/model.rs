@@ -47,6 +47,7 @@ pub enum Panel {
 #[derive(Default, PartialEq, Sequence)]
 pub enum InputType {
     #[default]
+    Auth,
     Headers,
     Body,
 }
@@ -54,10 +55,19 @@ pub enum InputType {
 impl fmt::Display for InputType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            InputType::Auth => write!(f, "Auth"),
             InputType::Headers => write!(f, "Headers"),
             InputType::Body => write!(f, "Body"),
         }
     }
+}
+
+#[derive(Default)]
+pub enum Auth<'a> {
+    #[default]
+    None,
+    Basic(TextArea<'a>, TextArea<'a>),
+    Bearer(TextArea<'a>),
 }
 
 #[derive(Default, Sequence)]
@@ -108,7 +118,7 @@ impl Into<(String, String)> for &InputRow {
 #[grammar = "http.pest"]
 struct RequestParser;
 
-pub struct Model {
+pub struct Model<'a> {
     pub filename: String,
     pub current_mode: Mode,
     pub current_panel: Panel,
@@ -120,6 +130,7 @@ pub struct Model {
     pub current_input_field: InputField,
     pub current_body_format: BodyFormat,
     pub input_index: usize,
+    pub auth_input: Auth<'a>,
     pub headers_input_table: NonEmpty<InputRow>,
     pub body_input_table: NonEmpty<InputRow>,
     pub output_row: usize,
@@ -128,8 +139,8 @@ pub struct Model {
     pub exit: bool,
 }
 
-impl Model {
-    pub fn new(filename: String) -> Model {
+impl<'a> Model<'a> {
+    pub fn new(filename: String) -> Model<'a> {
         Model {
             filename,
             current_mode: Mode::default(),
@@ -142,6 +153,7 @@ impl Model {
             current_input_field: InputField::default(),
             current_body_format: BodyFormat::default(),
             input_index: 0,
+            auth_input: Auth::default(),
             headers_input_table: nonempty![InputRow::default()],
             body_input_table: nonempty![InputRow::default()],
             output_row: 0,
@@ -196,6 +208,8 @@ impl Model {
             }
         }
 
+        let (auth, headers) = Self::parse_headers_input(headers_input);
+
         Ok(Self {
             filename,
             current_mode: Mode::default(),
@@ -208,7 +222,8 @@ impl Model {
             current_input_field: InputField::default(),
             current_body_format: BodyFormat::default(),
             input_index: 0,
-            headers_input_table: NonEmpty::from_vec(headers_input)
+            auth_input: auth,
+            headers_input_table: NonEmpty::from_vec(headers)
                 .unwrap_or(nonempty![InputRow::default()]),
             body_input_table: NonEmpty::from_vec(body_input)
                 .unwrap_or(nonempty![InputRow::default()]),
@@ -217,6 +232,10 @@ impl Model {
             message: String::default(),
             exit: false,
         })
+    }
+
+    fn parse_headers_input(headers_input: Vec<InputRow>) -> (Auth<'a>, Vec<InputRow>) {
+        (Auth::default(), headers_input)
     }
 
     pub fn to_file(&self) -> io::Result<()> {
@@ -433,7 +452,7 @@ impl Model {
 
     pub fn current_input_table(&self) -> &NonEmpty<InputRow> {
         match self.current_input_type {
-            InputType::Headers => &self.headers_input_table,
+            InputType::Auth | InputType::Headers => &self.headers_input_table,
             InputType::Body => &self.body_input_table,
         }
     }
@@ -492,7 +511,7 @@ impl Model {
 
     fn current_input_table_mut(&mut self) -> &mut NonEmpty<InputRow> {
         match self.current_input_type {
-            InputType::Headers => &mut self.headers_input_table,
+            InputType::Auth | InputType::Headers => &mut self.headers_input_table,
             InputType::Body => &mut self.body_input_table,
         }
     }
