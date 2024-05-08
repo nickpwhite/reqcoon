@@ -51,8 +51,8 @@ enum Message {
     PreviousInputType,
     NextInputField,
     PreviousInputField,
-    NextBodyFormat,
-    PreviousBodyFormat,
+    NextInputFormat,
+    PreviousInputFormat,
 
     // Submission
     SubmitRequest,
@@ -191,10 +191,10 @@ fn handle_normal_input_key(key: KeyEvent) -> Option<Message> {
         KeyCode::Right if key.modifiers == KeyModifiers::SHIFT => Some(Message::NextInputType),
         KeyCode::Left if key.modifiers == KeyModifiers::SHIFT => Some(Message::PreviousInputType),
         KeyCode::Right if key.modifiers == KeyModifiers::SHIFT | KeyModifiers::CONTROL => {
-            Some(Message::NextBodyFormat)
+            Some(Message::NextInputFormat)
         }
         KeyCode::Left if key.modifiers == KeyModifiers::SHIFT | KeyModifiers::CONTROL => {
-            Some(Message::PreviousBodyFormat)
+            Some(Message::PreviousInputFormat)
         }
         KeyCode::Tab => Some(Message::NextInputField),
         KeyCode::BackTab => Some(Message::PreviousInputField),
@@ -243,8 +243,8 @@ fn update(model: &mut Model, msg: Message) -> Option<Message> {
         Message::PreviousInputType => model.previous_input_type(),
         Message::NextInputField => model.next_input_field(),
         Message::PreviousInputField => model.previous_input_field(),
-        Message::NextBodyFormat => model.next_body_format(),
-        Message::PreviousBodyFormat => model.previous_body_format(),
+        Message::NextInputFormat => model.next_input_format(),
+        Message::PreviousInputFormat => model.previous_input_format(),
         Message::SubmitRequest => model.submit_request(),
         Message::Quit => model.exit = true,
     };
