@@ -3,15 +3,19 @@ use std::fmt;
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::iter::Iterator;
+use std::str;
 
 use clippers::Clipboard;
 use crossterm::event::{KeyCode, KeyEvent};
 use enum_iterator::Sequence;
+use http_auth_basic::Credentials;
 use json::JsonValue;
+use log::error;
 use nonempty::{nonempty, NonEmpty};
 use pest::Parser;
 use pest_derive::Parser;
 use ratatui::widgets::ListState;
+use regex::RegexBuilder;
 use reqwest::{blocking::Client, Method, Url};
 use tui_textarea::{CursorMove, TextArea};
 
@@ -47,6 +51,7 @@ pub enum Panel {
 #[derive(Default, PartialEq, Sequence)]
 pub enum InputType {
     #[default]
+    Auth,
     Headers,
     Body,
 }
@@ -54,8 +59,27 @@ pub enum InputType {
 impl fmt::Display for InputType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            InputType::Auth => write!(f, "Auth"),
             InputType::Headers => write!(f, "Headers"),
             InputType::Body => write!(f, "Body"),
+        }
+    }
+}
+
+#[derive(Default, PartialEq, Sequence)]
+pub enum AuthFormat {
+    #[default]
+    None,
+    Basic,
+    Bearer,
+}
+
+impl fmt::Display for AuthFormat {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            AuthFormat::None => write!(f, "None"),
+            AuthFormat::Basic => write!(f, "Basic"),
+            AuthFormat::Bearer => write!(f, "Bearer"),
         }
     }
 }
@@ -104,6 +128,33 @@ impl Into<(String, String)> for &InputRow {
     }
 }
 
+#[derive(Default)]
+pub struct Auth {
+    pub format: AuthFormat,
+    pub basic_input: InputRow,
+    pub bearer_input: TextArea<'static>,
+}
+
+impl Auth {
+    fn username(&self) -> String {
+        self.basic_input.key.lines()[0].to_string()
+    }
+
+    fn password(&self) -> Option<String> {
+        let password = &self.basic_input.value.lines()[0];
+
+        if password.is_empty() {
+            None
+        } else {
+            Some(password.to_string())
+        }
+    }
+
+    fn token(&self) -> String {
+        self.bearer_input.lines()[0].to_string()
+    }
+}
+
 #[derive(Parser)]
 #[grammar = "http.pest"]
 struct RequestParser;
@@ -114,8 +165,9 @@ pub struct Model {
     pub current_panel: Panel,
     pub list_state: ListState,
     pub current_method: Method,
-    pub method_input: TextArea<'static>,
+    pub dummy_input: TextArea<'static>,
     pub url_input: TextArea<'static>,
+    pub auth: Auth,
     pub current_input_type: InputType,
     pub current_input_field: InputField,
     pub current_body_format: BodyFormat,
@@ -136,10 +188,11 @@ impl Model {
             current_panel: Panel::default(),
             list_state: ListState::default().with_selected(Some(0)),
             current_method: Method::GET,
-            method_input: TextArea::default(),
+            dummy_input: TextArea::default(),
             url_input: TextArea::default(),
             current_input_type: InputType::default(),
             current_input_field: InputField::default(),
+            auth: Auth::default(),
             current_body_format: BodyFormat::default(),
             input_index: 0,
             headers_input_table: nonempty![InputRow::default()],
@@ -196,19 +249,22 @@ impl Model {
             }
         }
 
+        let (auth, headers) = Self::parse_headers_input(headers_input);
+
         Ok(Self {
             filename,
             current_mode: Mode::default(),
             current_panel: Panel::default(),
             list_state: ListState::default().with_selected(Some(0)),
             current_method: method,
-            method_input: TextArea::default(),
+            dummy_input: TextArea::default(),
             url_input: TextArea::from([uri]),
+            auth,
             current_input_type: InputType::default(),
             current_input_field: InputField::default(),
             current_body_format: BodyFormat::default(),
             input_index: 0,
-            headers_input_table: NonEmpty::from_vec(headers_input)
+            headers_input_table: NonEmpty::from_vec(headers)
                 .unwrap_or(nonempty![InputRow::default()]),
             body_input_table: NonEmpty::from_vec(body_input)
                 .unwrap_or(nonempty![InputRow::default()]),
@@ -219,8 +275,68 @@ impl Model {
         })
     }
 
+    fn parse_headers_input(mut headers_input: Vec<InputRow>) -> (Auth, Vec<InputRow>) {
+        match headers_input
+            .iter()
+            .position(|input_row| input_row.key.lines()[0] == "Authorization")
+        {
+            Some(index) => {
+                let re = RegexBuilder::new(r"(basic|bearer) (.*)")
+                    .case_insensitive(true)
+                    .build()
+                    .unwrap();
+                let auth_header = headers_input.remove(index);
+                match re.captures(&auth_header.value.lines()[0]) {
+                    Some(captures) => match captures[1].to_lowercase().as_str() {
+                        "basic" => {
+                            match Credentials::from_header(auth_header.value.lines()[0].clone()) {
+                                Ok(credentials) => (
+                                    Auth {
+                                        format: AuthFormat::Basic,
+                                        basic_input: InputRow {
+                                            key: TextArea::from(credentials.user_id.lines()),
+                                            value: TextArea::from(credentials.password.lines()),
+                                        },
+                                        bearer_input: TextArea::default(),
+                                    },
+                                    headers_input,
+                                ),
+                                Err(err) => {
+                                    error!("{:?}", err);
+                                    headers_input.insert(index, auth_header);
+                                    (Auth::default(), headers_input)
+                                }
+                            }
+                        }
+                        "bearer" => (
+                            Auth {
+                                format: AuthFormat::Bearer,
+                                basic_input: InputRow::default(),
+                                bearer_input: TextArea::from(captures[2].to_string().lines()),
+                            },
+                            headers_input,
+                        ),
+                        _ => {
+                            headers_input.insert(index, auth_header);
+                            (Auth::default(), headers_input)
+                        }
+                    },
+                    None => {
+                        headers_input.insert(index, auth_header);
+                        (Auth::default(), headers_input)
+                    }
+                }
+            }
+            None => (Auth::default(), headers_input),
+        }
+    }
+
     pub fn to_file(&self) -> io::Result<()> {
         let mut output = format!("{} {}", self.current_method, self.url_input.lines()[0]);
+        if !self.auth_string().is_empty() {
+            output.push_str("\n");
+            output.push_str(&self.auth_string());
+        }
         if !self.headers_string().is_empty() {
             output.push_str("\n");
             output.push_str(&self.headers_string());
@@ -353,10 +469,18 @@ impl Model {
     }
 
     pub fn handle_insert_input(&mut self, event: KeyEvent) {
+        if self.current_input_type == InputType::Auth && self.auth.format == AuthFormat::None {
+            return;
+        }
+
         self.current_input_mut().input(event);
     }
 
     pub fn handle_normal_input(&mut self, key_event: KeyEvent) {
+        if self.current_input_type == InputType::Auth && self.auth.format == AuthFormat::None {
+            return;
+        }
+
         let cursor_move = match key_event.code {
             KeyCode::Char('h') | KeyCode::Left => Some(CursorMove::Back),
             KeyCode::Char('l') | KeyCode::Right => Some(CursorMove::Forward),
@@ -395,45 +519,88 @@ impl Model {
     }
 
     pub fn next_input_field(&mut self) {
-        if self.current_input_field == InputField::last().unwrap() {
-            if !self.current_input_table().last().is_empty() {
-                self.current_input_table_mut().push(InputRow::default());
-            }
-            if self.input_index < self.current_input_table().len() - 1 {
-                self.input_index += 1
+        match self.current_input_type {
+            InputType::Auth => match self.auth.format {
+                AuthFormat::None | AuthFormat::Bearer => (),
+                AuthFormat::Basic => {
+                    self.current_input_field = self.current_input_field.next().unwrap_or_default();
+                }
+            },
+            InputType::Headers | InputType::Body => {
+                if self.current_input_field == InputField::last().unwrap() {
+                    if !self.current_input_table().last().is_empty() {
+                        self.current_input_table_mut().push(InputRow::default());
+                    }
+                    if self.input_index < self.current_input_table().len() - 1 {
+                        self.input_index += 1
+                    }
+                }
+                self.current_input_field = self.current_input_field.next().unwrap_or_default();
             }
         }
-        self.current_input_field = self.current_input_field.next().unwrap_or_default();
     }
 
     pub fn previous_input_field(&mut self) {
-        if self.current_input_field == InputField::first().unwrap() {
-            if self.input_index == 0 {
-                self.input_index = self.current_input_table().len() - 1;
-            } else {
-                self.input_index -= 1;
+        match self.current_input_type {
+            InputType::Auth => match self.auth.format {
+                AuthFormat::None | AuthFormat::Bearer => (),
+                AuthFormat::Basic => {
+                    self.current_input_field = self
+                        .current_input_field
+                        .previous()
+                        .unwrap_or(InputField::last().unwrap());
+                }
+            },
+            InputType::Headers | InputType::Body => {
+                if self.current_input_field == InputField::first().unwrap() {
+                    if self.input_index == 0 {
+                        self.input_index = self.current_input_table().len() - 1;
+                    } else {
+                        self.input_index -= 1;
+                    }
+                }
+                self.current_input_field = self
+                    .current_input_field
+                    .previous()
+                    .unwrap_or(InputField::last().unwrap());
             }
         }
-        self.current_input_field = self
-            .current_input_field
-            .previous()
-            .unwrap_or(InputField::last().unwrap());
     }
 
-    pub fn next_body_format(&mut self) {
-        self.current_body_format = self.current_body_format.next().unwrap_or_default();
+    pub fn next_input_format(&mut self) {
+        match self.current_input_type {
+            InputType::Auth => {
+                self.auth.format = self.auth.format.next().unwrap_or_default();
+            }
+            InputType::Headers => (),
+            InputType::Body => {
+                self.current_body_format = self.current_body_format.next().unwrap_or_default();
+            }
+        }
     }
 
-    pub fn previous_body_format(&mut self) {
-        self.current_body_format = self
-            .current_body_format
-            .previous()
-            .unwrap_or(BodyFormat::last().unwrap());
+    pub fn previous_input_format(&mut self) {
+        match self.current_input_type {
+            InputType::Auth => {
+                self.auth.format = self
+                    .auth
+                    .format
+                    .previous()
+                    .unwrap_or(AuthFormat::last().unwrap());
+            }
+            InputType::Headers => (),
+            InputType::Body => {
+                self.current_body_format = self
+                    .current_body_format
+                    .previous()
+                    .unwrap_or(BodyFormat::last().unwrap());
+            }
+        }
     }
 
     pub fn current_input_table(&self) -> &NonEmpty<InputRow> {
         match self.current_input_type {
-            InputType::Headers => &self.headers_input_table,
+            InputType::Auth | InputType::Headers => &self.headers_input_table,
             InputType::Body => &self.body_input_table,
         }
     }
@@ -442,6 +609,13 @@ impl Model {
         let url = Url::parse(&self.url_input.lines()[0]).expect("Invalid URL");
         let mut request_builder = Client::new().request(self.current_method.clone(), url);
 
+        request_builder = match self.auth.format {
+            AuthFormat::None => request_builder,
+            AuthFormat::Basic => {
+                request_builder.basic_auth(self.auth.username(), self.auth.password())
+            }
+            AuthFormat::Bearer => request_builder.bearer_auth(self.auth.token()),
+        };
         request_builder = self
             .non_empty_headers()
             .fold(request_builder, |builder, InputRow { key, value }| {
@@ -464,11 +638,21 @@ impl Model {
 
     fn current_input(&self) -> &TextArea<'static> {
         match self.current_panel {
-            Panel::Method => &self.method_input,
+            Panel::Method => &self.dummy_input,
             Panel::Url => &self.url_input,
-            Panel::Input => match self.current_input_field {
-                InputField::Key => &self.current_input_row().key,
-                InputField::Value => &self.current_input_row().value,
+            Panel::Input => match self.current_input_type {
+                InputType::Auth => match self.auth.format {
+                    AuthFormat::None => &self.dummy_input,
+                    AuthFormat::Basic => match self.current_input_field {
+                        InputField::Key => &self.auth.basic_input.key,
+                        InputField::Value => &self.auth.basic_input.value,
+                    },
+                    AuthFormat::Bearer => &self.auth.bearer_input,
+                },
+                InputType::Headers | InputType::Body => match self.current_input_field {
+                    InputField::Key => &self.current_input_row().key,
+                    InputField::Value => &self.current_input_row().value,
+                },
             },
             Panel::Output => &self.output_input,
         }
@@ -476,11 +660,21 @@ impl Model {
 
     fn current_input_mut(&mut self) -> &mut TextArea<'static> {
         match self.current_panel {
-            Panel::Method => &mut self.method_input,
+            Panel::Method => &mut self.dummy_input,
             Panel::Url => &mut self.url_input,
-            Panel::Input => match self.current_input_field {
-                InputField::Key => &mut self.current_input_row_mut().key,
-                InputField::Value => &mut self.current_input_row_mut().value,
+            Panel::Input => match self.current_input_type {
+                InputType::Auth => match self.auth.format {
+                    AuthFormat::None => &mut self.dummy_input,
+                    AuthFormat::Basic => match self.current_input_field {
+                        InputField::Key => &mut self.auth.basic_input.key,
+                        InputField::Value => &mut self.auth.basic_input.value,
+                    },
+                    AuthFormat::Bearer => &mut self.auth.bearer_input,
+                },
+                InputType::Headers | InputType::Body => match self.current_input_field {
+                    InputField::Key => &mut self.current_input_row_mut().key,
+                    InputField::Value => &mut self.current_input_row_mut().value,
+                },
             },
             Panel::Output => &mut self.output_input,
         }
@@ -492,7 +686,7 @@ impl Model {
 
     fn current_input_table_mut(&mut self) -> &mut NonEmpty<InputRow> {
         match self.current_input_type {
-            InputType::Headers => &mut self.headers_input_table,
+            InputType::Auth | InputType::Headers => &mut self.headers_input_table,
             InputType::Body => &mut self.body_input_table,
         }
     }
@@ -500,6 +694,18 @@ impl Model {
     fn current_input_row_mut(&mut self) -> &mut InputRow {
         let input_index = self.input_index;
         &mut self.current_input_table_mut()[input_index]
+    }
+
+    fn auth_string(&self) -> String {
+        match self.auth.format {
+            AuthFormat::None => String::default(),
+            AuthFormat::Basic => Credentials {
+                user_id: self.auth.username(),
+                password: self.auth.password().unwrap_or(String::default()),
+            }
+            .as_http_header(),
+            AuthFormat::Bearer => format!("Bearer {}", self.auth.token()),
+        }
     }
 
     fn non_empty_headers(&self) -> impl Iterator<Item = &InputRow> {
