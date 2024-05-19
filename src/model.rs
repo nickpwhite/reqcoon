@@ -17,6 +17,8 @@ use pest_derive::Parser;
 use ratatui::widgets::ListState;
 use regex::RegexBuilder;
 use reqwest::{blocking::Client, Method, Url};
+use serde::Serialize;
+use serde_json;
 use tui_textarea::{CursorMove, TextArea};
 
 use crate::tmux::{select_tmux_panel, Direction};
@@ -107,7 +109,7 @@ pub enum InputField {
     Value,
 }
 
-#[derive(Default)]
+#[derive(Default, Serialize)]
 pub struct InputRow {
     pub key: TextArea<'static>,
     pub value: TextArea<'static>,
@@ -159,6 +161,7 @@ impl Auth {
 #[grammar = "http.pest"]
 struct RequestParser;
 
+#[derive(Serialize)]
 pub struct Model {
     pub filename: String,
     pub current_mode: Mode,
@@ -346,6 +349,8 @@ impl Model {
             output.push_str(&self.body_string());
         }
         let mut file = File::create(&self.filename)?;
+        let mut json_file = File::create("output.json")?;
+        json_file.write_all(serde_json::to_string(&self)?.as_bytes());
 
         file.write_all(output.as_bytes())
     }

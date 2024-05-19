@@ -1151,6 +1151,8 @@ dependencies = [
  "ratatui",
  "regex",
  "reqwest",
+ "serde",
+ "serde_json",
  "simple-logging",
  "tui-textarea",
 ]
