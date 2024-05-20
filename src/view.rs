@@ -7,6 +7,7 @@ use ratatui::{
 };
 
 use crate::{
+    input::Input,
     model::{AuthFormat, BodyFormat, InputField, InputType, Model, Panel},
     text_wrapping::{truncate_ellipse, wrap_string},
 };
@@ -126,11 +127,7 @@ fn url_block(model: &mut Model) -> impl Widget + '_ {
         .borders(Borders::ALL)
         .border_style(style);
 
-    model.url_input.set_cursor_line_style(Style::default());
-    model.url_input.set_cursor_style(Style::default());
-    model.url_input.set_block(url_block);
-
-    model.url_input.widget()
+    Paragraph::new(model.new_url_input.value()).block(url_block)
 }
 
 fn input_block(model: &Model, field_width: usize) -> Table {

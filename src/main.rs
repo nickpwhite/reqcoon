@@ -22,7 +22,7 @@ struct Args {
     filename: String,
 }
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 enum Message {
     // Mode
     Append,

@@ -19,6 +19,7 @@ use regex::RegexBuilder;
 use reqwest::{blocking::Client, Method, Url};
 use tui_textarea::{CursorMove, TextArea};
 
+use crate::input::{CursorMove as CursorMoveNew, Input, OnelineInput};
 use crate::tmux::{select_tmux_panel, Direction};
 
 #[derive(Default, PartialEq)]
@@ -167,6 +168,7 @@ pub struct Model {
     pub current_method: Method,
     pub dummy_input: TextArea<'static>,
     pub url_input: TextArea<'static>,
+    pub new_url_input: OnelineInput,
     pub auth: Auth,
     pub current_input_type: InputType,
     pub current_input_field: InputField,
@@ -190,6 +192,7 @@ impl Model {
             current_method: Method::GET,
             dummy_input: TextArea::default(),
             url_input: TextArea::default(),
+            new_url_input: OnelineInput::default(),
             current_input_type: InputType::default(),
             current_input_field: InputField::default(),
             auth: Auth::default(),
@@ -259,6 +262,7 @@ impl Model {
             current_method: method,
             dummy_input: TextArea::default(),
             url_input: TextArea::from([uri]),
+            new_url_input: OnelineInput::from(uri),
             auth,
             current_input_type: InputType::default(),
             current_input_field: InputField::default(),
@@ -352,7 +356,12 @@ impl Model {
 
     pub fn append(&mut self) {
         self.current_mode = Mode::Insert;
-        self.current_input_mut().move_cursor(CursorMove::Forward);
+        match self.current_panel {
+            Panel::Url => self
+                .current_input_mut_new()
+                .move_cursor(CursorMoveNew::NextChar),
+            _ => self.current_input_mut().move_cursor(CursorMove::Forward),
+        };
     }
 
     pub fn insert(&mut self) {
@@ -360,7 +369,12 @@ impl Model {
     }
 
     pub fn leave_insert(&mut self) {
-        self.current_input_mut().move_cursor(CursorMove::Back);
+        match self.current_panel {
+            Panel::Url => self
+                .current_input_mut_new()
+                .move_cursor(CursorMoveNew::PrevChar),
+            _ => self.current_input_mut().move_cursor(CursorMove::Back),
+        };
     }
 
     pub fn normal(&mut self) {
@@ -457,7 +471,10 @@ impl Model {
     }
 
     pub fn cursor_col(&self) -> u16 {
-        self.current_input().cursor().1 as u16
+        match self.current_panel {
+            Panel::Url => self.current_input_new().cursor().0 as u16,
+            _ => self.current_input().cursor().1 as u16,
+        }
     }
 
     pub fn copy(&mut self) {
@@ -469,16 +486,33 @@ impl Model {
     }
 
     pub fn handle_insert_input(&mut self, event: KeyEvent) {
-        if self.current_input_type == InputType::Auth && self.auth.format == AuthFormat::None {
+        if self.current_panel == Panel::Input
+            && self.current_input_type == InputType::Auth
+            && self.auth.format == AuthFormat::None
+        {
             return;
         }
 
-        self.current_input_mut().input(event);
+        match self.current_panel {
+            Panel::Url => {
+                self.current_input_mut_new().handle_input(event);
+            }
+            _ => {
+                self.current_input_mut().input(event);
+            }
+        };
     }
 
     pub fn handle_normal_input(&mut self, key_event: KeyEvent) {
-        if self.current_input_type == InputType::Auth && self.auth.format == AuthFormat::None {
+        if self.current_panel == Panel::Input
+            && self.current_input_type == InputType::Auth
+            && self.auth.format == AuthFormat::None
+        {
             return;
+        }
+
+        if self.current_panel == Panel::Url {
+            return self.handle_normal_input_new(key_event);
         }
 
         let cursor_move = match key_event.code {
@@ -499,6 +533,23 @@ impl Model {
 
         match cursor_move {
             Some(request) => self.current_input_mut().move_cursor(request),
+            None => (),
+        };
+    }
+
+    pub fn handle_normal_input_new(&mut self, key_event: KeyEvent) {
+        let cursor_move = match key_event.code {
+            KeyCode::Char('h') | KeyCode::Left => Some(CursorMoveNew::PrevChar),
+            KeyCode::Char('l') | KeyCode::Right => Some(CursorMoveNew::NextChar),
+            KeyCode::Char('b') => Some(CursorMoveNew::PrevWord),
+            KeyCode::Char('w') => Some(CursorMoveNew::NextWord),
+            KeyCode::Char('^') | KeyCode::Home => Some(CursorMoveNew::LineHead),
+            KeyCode::Char('$') | KeyCode::End => Some(CursorMoveNew::LineEnd),
+            _ => None,
+        };
+
+        match cursor_move {
+            Some(request) => self.current_input_mut_new().move_cursor(request),
             None => (),
         };
     }
@@ -658,6 +709,10 @@ impl Model {
         }
     }
 
+    fn current_input_new(&self) -> &impl Input {
+        &self.new_url_input
+    }
+
     fn current_input_mut(&mut self) -> &mut TextArea<'static> {
         match self.current_panel {
             Panel::Method => &mut self.dummy_input,
@@ -678,6 +733,10 @@ impl Model {
             },
             Panel::Output => &mut self.output_input,
         }
+    }
+
+    fn current_input_mut_new(&mut self) -> &mut impl Input {
+        &mut self.new_url_input
     }
 
     fn current_input_row(&self) -> &InputRow {
