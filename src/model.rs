@@ -17,9 +17,8 @@ use pest_derive::Parser;
 use ratatui::widgets::ListState;
 use regex::RegexBuilder;
 use reqwest::{blocking::Client, Method, Url};
-use tui_textarea::{CursorMove, TextArea};
 
-use crate::input::{CursorMove as CursorMoveNew, Input, OnelineInput};
+use crate::input::{CursorMove, DummyInput, Input, OnelineInput};
 use crate::tmux::{select_tmux_panel, Direction};
 
 #[derive(Default, PartialEq)]
@@ -110,8 +109,8 @@ pub enum InputField {
 
 #[derive(Default)]
 pub struct InputRow {
-    pub key: TextArea<'static>,
-    pub value: TextArea<'static>,
+    pub key: OnelineInput,
+    pub value: OnelineInput,
 }
 
 impl InputRow {
@@ -122,10 +121,7 @@ impl InputRow {
 
 impl Into<(String, String)> for &InputRow {
     fn into(self) -> (String, String) {
-        (
-            self.key.lines()[0].to_string(),
-            self.value.lines()[0].to_string(),
-        )
+        (self.key.value().to_string(), self.value.value().to_string())
     }
 }
 
@@ -133,26 +129,24 @@ impl Into<(String, String)> for &InputRow {
 pub struct Auth {
     pub format: AuthFormat,
     pub basic_input: InputRow,
-    pub bearer_input: TextArea<'static>,
+    pub bearer_input: OnelineInput,
 }
 
 impl Auth {
     fn username(&self) -> String {
-        self.basic_input.key.lines()[0].to_string()
+        self.basic_input.key.value().to_string()
     }
 
     fn password(&self) -> Option<String> {
-        let password = &self.basic_input.value.lines()[0];
-
-        if password.is_empty() {
+        if self.basic_input.is_empty() {
             None
         } else {
-            Some(password.to_string())
+            Some(self.basic_input.value.value().to_string())
         }
     }
 
     fn token(&self) -> String {
-        self.bearer_input.lines()[0].to_string()
+        self.bearer_input.value().to_string()
     }
 }
 
@@ -166,9 +160,8 @@ pub struct Model {
     pub current_panel: Panel,
     pub list_state: ListState,
     pub current_method: Method,
-    pub dummy_input: TextArea<'static>,
-    pub url_input: TextArea<'static>,
-    pub new_url_input: OnelineInput,
+    pub dummy_input: DummyInput,
+    pub url_input: OnelineInput,
     pub auth: Auth,
     pub current_input_type: InputType,
     pub current_input_field: InputField,
@@ -177,7 +170,7 @@ pub struct Model {
     pub headers_input_table: NonEmpty<InputRow>,
     pub body_input_table: NonEmpty<InputRow>,
     pub output_row: usize,
-    pub output_input: TextArea<'static>,
+    pub output_input: OnelineInput,
     pub message: String,
     pub exit: bool,
 }
@@ -190,9 +183,8 @@ impl Model {
             current_panel: Panel::default(),
             list_state: ListState::default().with_selected(Some(0)),
             current_method: Method::GET,
-            dummy_input: TextArea::default(),
-            url_input: TextArea::default(),
-            new_url_input: OnelineInput::default(),
+            dummy_input: DummyInput::default(),
+            url_input: OnelineInput::default(),
             current_input_type: InputType::default(),
             current_input_field: InputField::default(),
             auth: Auth::default(),
@@ -201,7 +193,7 @@ impl Model {
             headers_input_table: nonempty![InputRow::default()],
             body_input_table: nonempty![InputRow::default()],
             output_row: 0,
-            output_input: TextArea::default(),
+            output_input: OnelineInput::default(),
             message: String::default(),
             exit: false,
         }
@@ -234,8 +226,8 @@ impl Model {
                             }
                         }
                         headers_input.push(InputRow {
-                            key: [key].into(),
-                            value: [value].into(),
+                            key: key.into(),
+                            value: value.into(),
                         });
                     }
                 }
@@ -243,8 +235,8 @@ impl Model {
                     let object = json::parse(pair.as_str())?;
                     for (key, value) in object.entries() {
                         body_input.push(InputRow {
-                            key: [key].into(),
-                            value: [value.as_str().unwrap()].into(),
+                            key: key.into(),
+                            value: value.as_str().unwrap().into(),
                         })
                     }
                 }
@@ -260,9 +252,8 @@ impl Model {
             current_panel: Panel::default(),
             list_state: ListState::default().with_selected(Some(0)),
             current_method: method,
-            dummy_input: TextArea::default(),
-            url_input: TextArea::from([uri]),
-            new_url_input: OnelineInput::from(uri),
+            dummy_input: DummyInput::default(),
+            url_input: OnelineInput::from(uri),
             auth,
             current_input_type: InputType::default(),
             current_input_field: InputField::default(),
@@ -273,7 +264,7 @@ impl Model {
             body_input_table: NonEmpty::from_vec(body_input)
                 .unwrap_or(nonempty![InputRow::default()]),
             output_row: 0,
-            output_input: TextArea::default(),
+            output_input: OnelineInput::default(),
             message: String::default(),
             exit: false,
         })
@@ -282,7 +273,7 @@ impl Model {
     fn parse_headers_input(mut headers_input: Vec<InputRow>) -> (Auth, Vec<InputRow>) {
         match headers_input
             .iter()
-            .position(|input_row| input_row.key.lines()[0] == "Authorization")
+            .position(|input_row| input_row.key.value() == "Authorization")
         {
             Some(index) => {
                 let re = RegexBuilder::new(r"(basic|bearer) (.*)")
@@ -290,18 +281,18 @@ impl Model {
                     .build()
                     .unwrap();
                 let auth_header = headers_input.remove(index);
-                match re.captures(&auth_header.value.lines()[0]) {
+                match re.captures(&auth_header.value.value()) {
                     Some(captures) => match captures[1].to_lowercase().as_str() {
                         "basic" => {
-                            match Credentials::from_header(auth_header.value.lines()[0].clone()) {
+                            match Credentials::from_header(auth_header.value.value().to_string()) {
                                 Ok(credentials) => (
                                     Auth {
                                         format: AuthFormat::Basic,
                                         basic_input: InputRow {
-                                            key: TextArea::from(credentials.user_id.lines()),
-                                            value: TextArea::from(credentials.password.lines()),
+                                            key: credentials.user_id.into(),
+                                            value: credentials.password.into(),
                                         },
-                                        bearer_input: TextArea::default(),
+                                        bearer_input: OnelineInput::default(),
                                     },
                                     headers_input,
                                 ),
@@ -316,7 +307,7 @@ impl Model {
                             Auth {
                                 format: AuthFormat::Bearer,
                                 basic_input: InputRow::default(),
-                                bearer_input: TextArea::from(captures[2].to_string().lines()),
+                                bearer_input: OnelineInput::from(captures[2].to_string()),
                             },
                             headers_input,
                         ),
@@ -336,7 +327,7 @@ impl Model {
     }
 
     pub fn to_file(&self) -> io::Result<()> {
-        let mut output = format!("{} {}", self.current_method, self.url_input.lines()[0]);
+        let mut output = format!("{} {}", self.current_method, self.url_input);
         if !self.auth_string().is_empty() {
             output.push_str("\n");
             output.push_str(&self.auth_string());
@@ -356,12 +347,7 @@ impl Model {
 
     pub fn append(&mut self) {
         self.current_mode = Mode::Insert;
-        match self.current_panel {
-            Panel::Url => self
-                .current_input_mut_new()
-                .move_cursor(CursorMoveNew::NextChar),
-            _ => self.current_input_mut().move_cursor(CursorMove::Forward),
-        };
+        self.current_input_mut().move_cursor(CursorMove::NextChar);
     }
 
     pub fn insert(&mut self) {
@@ -369,12 +355,7 @@ impl Model {
     }
 
     pub fn leave_insert(&mut self) {
-        match self.current_panel {
-            Panel::Url => self
-                .current_input_mut_new()
-                .move_cursor(CursorMoveNew::PrevChar),
-            _ => self.current_input_mut().move_cursor(CursorMove::Back),
-        };
+        self.current_input_mut().move_cursor(CursorMove::PrevChar);
     }
 
     pub fn normal(&mut self) {
@@ -383,11 +364,11 @@ impl Model {
 
     pub fn visual(&mut self) {
         self.current_mode = Mode::Visual;
-        self.current_input_mut().start_selection();
+        //self.current_input_mut().start_selection();
     }
 
     pub fn leave_visual(&mut self) {
-        self.current_input_mut().cancel_selection();
+        //self.current_input_mut().cancel_selection();
     }
 
     pub fn select_panel_left(&mut self) {
@@ -471,18 +452,15 @@ impl Model {
     }
 
     pub fn cursor_col(&self) -> u16 {
-        match self.current_panel {
-            Panel::Url => self.current_input_new().cursor().0 as u16,
-            _ => self.current_input().cursor().1 as u16,
-        }
+        self.current_input().cursor().0 as u16
     }
 
     pub fn copy(&mut self) {
-        self.current_input_mut().copy();
-        match Clipboard::get().write_text(self.current_input().yank_text()) {
-            Ok(_) => (),
-            Err(err) => self.message = format!("Unable to save to system clipboard: {:?}", err),
-        }
+        //self.current_input_mut().copy();
+        //match Clipboard::get().write_text(self.current_input().yank_text()) {
+        //    Ok(_) => (),
+        //    Err(err) => self.message = format!("Unable to save to system clipboard: {:?}", err),
+        //}
     }
 
     pub fn handle_insert_input(&mut self, event: KeyEvent) {
@@ -493,14 +471,7 @@ impl Model {
             return;
         }
 
-        match self.current_panel {
-            Panel::Url => {
-                self.current_input_mut_new().handle_input(event);
-            }
-            _ => {
-                self.current_input_mut().input(event);
-            }
-        };
+        self.current_input_mut().handle_input(event);
     }
 
     pub fn handle_normal_input(&mut self, key_event: KeyEvent) {
@@ -511,45 +482,18 @@ impl Model {
             return;
         }
 
-        if self.current_panel == Panel::Url {
-            return self.handle_normal_input_new(key_event);
-        }
-
         let cursor_move = match key_event.code {
-            KeyCode::Char('h') | KeyCode::Left => Some(CursorMove::Back),
-            KeyCode::Char('l') | KeyCode::Right => Some(CursorMove::Forward),
-            KeyCode::Char('b') => Some(CursorMove::WordBack),
-            KeyCode::Char('w') => Some(CursorMove::WordForward),
-            KeyCode::Char('^') | KeyCode::Home => Some(CursorMove::Head),
-            KeyCode::Char('$') | KeyCode::End => Some(CursorMove::End),
-            KeyCode::Char('j') | KeyCode::Down if self.current_panel == Panel::Output => {
-                Some(CursorMove::Down)
-            }
-            KeyCode::Char('k') | KeyCode::Up if self.current_panel == Panel::Output => {
-                Some(CursorMove::Up)
-            }
+            KeyCode::Char('h') | KeyCode::Left => Some(CursorMove::PrevChar),
+            KeyCode::Char('l') | KeyCode::Right => Some(CursorMove::NextChar),
+            KeyCode::Char('b') => Some(CursorMove::PrevWord),
+            KeyCode::Char('w') => Some(CursorMove::NextWord),
+            KeyCode::Char('^') | KeyCode::Home => Some(CursorMove::LineHead),
+            KeyCode::Char('$') | KeyCode::End => Some(CursorMove::LineEnd),
             _ => None,
         };
 
         match cursor_move {
             Some(request) => self.current_input_mut().move_cursor(request),
-            None => (),
-        };
-    }
-
-    pub fn handle_normal_input_new(&mut self, key_event: KeyEvent) {
-        let cursor_move = match key_event.code {
-            KeyCode::Char('h') | KeyCode::Left => Some(CursorMoveNew::PrevChar),
-            KeyCode::Char('l') | KeyCode::Right => Some(CursorMoveNew::NextChar),
-            KeyCode::Char('b') => Some(CursorMoveNew::PrevWord),
-            KeyCode::Char('w') => Some(CursorMoveNew::NextWord),
-            KeyCode::Char('^') | KeyCode::Home => Some(CursorMoveNew::LineHead),
-            KeyCode::Char('$') | KeyCode::End => Some(CursorMoveNew::LineEnd),
-            _ => None,
-        };
-
-        match cursor_move {
-            Some(request) => self.current_input_mut_new().move_cursor(request),
             None => (),
         };
     }
@@ -657,7 +601,7 @@ impl Model {
     }
 
     pub fn submit_request(&mut self) {
-        let url = Url::parse(&self.url_input.lines()[0]).expect("Invalid URL");
+        let url = Url::parse(&self.url_input.value()).expect("Invalid URL");
         let mut request_builder = Client::new().request(self.current_method.clone(), url);
 
         request_builder = match self.auth.format {
@@ -670,7 +614,7 @@ impl Model {
         request_builder = self
             .non_empty_headers()
             .fold(request_builder, |builder, InputRow { key, value }| {
-                builder.header(&key.lines()[0], &value.lines()[0])
+                builder.header(key.value(), value.value())
             });
         request_builder = match self.current_body_format {
             BodyFormat::Json => request_builder.json(&self.body_hash_map()),
@@ -684,10 +628,10 @@ impl Model {
             Err(error) => format!("{:?}", error),
         };
 
-        self.output_input = TextArea::from(output.lines());
+        self.output_input = OnelineInput::from(output);
     }
 
-    fn current_input(&self) -> &TextArea<'static> {
+    fn current_input(&self) -> &dyn Input {
         match self.current_panel {
             Panel::Method => &self.dummy_input,
             Panel::Url => &self.url_input,
@@ -709,11 +653,7 @@ impl Model {
         }
     }
 
-    fn current_input_new(&self) -> &impl Input {
-        &self.new_url_input
-    }
-
-    fn current_input_mut(&mut self) -> &mut TextArea<'static> {
+    fn current_input_mut(&mut self) -> &mut dyn Input {
         match self.current_panel {
             Panel::Method => &mut self.dummy_input,
             Panel::Url => &mut self.url_input,
@@ -733,10 +673,6 @@ impl Model {
             },
             Panel::Output => &mut self.output_input,
         }
-    }
-
-    fn current_input_mut_new(&mut self) -> &mut impl Input {
-        &mut self.new_url_input
     }
 
     fn current_input_row(&self) -> &InputRow {
@@ -775,13 +711,7 @@ impl Model {
 
     fn headers_string(&self) -> String {
         self.non_empty_headers()
-            .map(|input_row| {
-                format!(
-                    "{}: {}",
-                    input_row.key.lines()[0],
-                    input_row.value.lines()[0]
-                )
-            })
+            .map(|input_row| format!("{}: {}", input_row.key, input_row.value))
             .collect()
     }
 
@@ -795,9 +725,7 @@ impl Model {
         match self.current_body_format {
             BodyFormat::Json => JsonValue::Object(
                 self.non_empty_body()
-                    .map(|InputRow { key, value }| {
-                        (key.lines()[0].clone(), value.lines()[0].clone())
-                    })
+                    .map(|InputRow { key, value }| (key.value(), value.value()))
                     .collect(),
             )
             .dump(),

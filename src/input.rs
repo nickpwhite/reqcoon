@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 #[derive(Debug)]
@@ -78,12 +80,42 @@ pub trait Input {
             _ => todo!(),
         }
     }
+
+    fn is_empty(&self) -> bool {
+        self.value().is_empty()
+    }
+}
+
+#[derive(Default)]
+pub struct DummyInput {}
+
+impl Input for DummyInput {
+    fn value(&self) -> &str {
+        ""
+    }
+    fn len(&self) -> usize {
+        0
+    }
+    fn cursor(&self) -> (usize, usize) {
+        (0, 0)
+    }
+    fn move_cursor(&mut self, cursor_move: CursorMove) {}
+    fn insert_newline(&mut self) {}
+    fn insert_char(&mut self, character: char) {}
+    fn delete_char(&mut self) {}
+    fn delete_next_char(&mut self) {}
 }
 
 #[derive(Default)]
 pub struct OnelineInput {
     value: String,
     cursor_col: usize,
+}
+
+impl fmt::Display for OnelineInput {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.value())
+    }
 }
 
 impl From<&str> for OnelineInput {
@@ -101,6 +133,12 @@ impl From<String> for OnelineInput {
             value: item,
             cursor_col: 0,
         }
+    }
+}
+
+impl Into<String> for OnelineInput {
+    fn into(self) -> String {
+        self.value().into()
     }
 }
 
