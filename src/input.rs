@@ -1,5 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+#[derive(Debug)]
 pub enum CursorMove {
     NextChar,
     PrevChar,
@@ -50,10 +51,10 @@ pub trait Input {
                 ..
             } => self.move_cursor(CursorMove::PrevChar),
             KeyEvent {
-                code: KeyCode::Down,
+                code: KeyCode::Right,
                 modifiers: KeyModifiers::NONE,
                 ..
-            } => self.move_cursor(CursorMove::NextLine),
+            } => self.move_cursor(CursorMove::NextChar),
             KeyEvent {
                 code: KeyCode::Up,
                 modifiers: KeyModifiers::NONE,
@@ -79,14 +80,33 @@ pub trait Input {
     }
 }
 
+#[derive(Default)]
 pub struct OnelineInput {
     value: String,
     cursor_col: usize,
 }
 
+impl From<&str> for OnelineInput {
+    fn from(item: &str) -> Self {
+        Self {
+            value: item.into(),
+            cursor_col: 0,
+        }
+    }
+}
+
+impl From<String> for OnelineInput {
+    fn from(item: String) -> Self {
+        Self {
+            value: item,
+            cursor_col: 0,
+        }
+    }
+}
+
 impl OnelineInput {
     fn next_word(&self) -> Option<(usize, char)> {
-        let mut chars = self.value().chars().enumerate();
+        let mut chars = self.value().char_indices();
         let (_, c) = chars.nth(self.cursor().0)?;
 
         if c.is_whitespace() {
@@ -102,6 +122,33 @@ impl OnelineInput {
                 }
             })
         }
+    }
+
+    fn prev_word(&self) -> Option<(usize, char)> {
+        if self.cursor().0 == 0 {
+            return None;
+        }
+
+        let mut chars = self
+            .value()
+            .char_indices()
+            .rev()
+            .skip(self.value().len().saturating_sub(self.cursor().0));
+        let mut target = chars.next()?;
+
+        let mut non_whitespace = !target.1.is_whitespace();
+        for (i, c) in chars {
+            if (non_whitespace && c.is_whitespace())
+                || (!target.1.is_whitespace() && c.is_alphanumeric() != target.1.is_alphanumeric())
+            {
+                break;
+            } else {
+                non_whitespace = non_whitespace || !c.is_whitespace();
+                target = (i, c);
+            }
+        }
+
+        Some(target)
     }
 }
 
@@ -128,7 +175,12 @@ impl Input for OnelineInput {
                     None => self.len(),
                 }
             }
-            CursorMove::PrevWord => self.cursor_col -= 1,
+            CursorMove::PrevWord => {
+                self.cursor_col = match self.prev_word() {
+                    Some((i, _)) => i,
+                    None => 0,
+                }
+            }
             CursorMove::LineHead | CursorMove::Head => self.cursor_col = 0,
             CursorMove::LineEnd | CursorMove::End => self.cursor_col = self.len(),
             CursorMove::NextLine | CursorMove::PrevLine => (),
@@ -145,6 +197,7 @@ impl Input for OnelineInput {
             .map_or_else(|| self.value.len(), |(index, _)| index);
 
         self.value.insert(byte_index, character);
+        self.move_cursor(CursorMove::NextChar);
     }
 
     fn delete_char(&mut self) {
@@ -156,9 +209,10 @@ impl Input for OnelineInput {
             .value
             .char_indices()
             .nth(self.cursor_col - 1)
-            .map_or_else(|| self.value.len(), |(index, _)| index);
+            .map_or_else(|| self.value.len() - 1, |(index, _)| index);
 
         self.value.remove(byte_index);
+        self.move_cursor(CursorMove::PrevChar);
     }
 
     fn delete_next_char(&mut self) {
@@ -222,16 +276,21 @@ mod tests {
             input.move_cursor(CursorMove::NextWord);
             assert_eq!(input.cursor(), (18, 0));
         }
-
         #[test]
         fn prev_word() {
             let mut input = OnelineInput {
-                value: "".to_string(),
-                cursor_col: 1,
+                value: "   hello $%^ world".to_string(),
+                cursor_col: 17,
             };
-            input.move_cursor(CursorMove::PrevWord);
 
-            assert_eq!(input.cursor(), (0, 0))
+            input.move_cursor(CursorMove::PrevWord);
+            assert_eq!(input.cursor(), (13, 0));
+
+            input.move_cursor(CursorMove::PrevWord);
+            assert_eq!(input.cursor(), (9, 0));
+
+            input.move_cursor(CursorMove::PrevWord);
+            assert_eq!(input.cursor(), (3, 0));
         }
 
         #[test]
