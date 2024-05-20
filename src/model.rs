@@ -18,7 +18,7 @@ use ratatui::widgets::ListState;
 use regex::RegexBuilder;
 use reqwest::{blocking::Client, Method, Url};
 
-use crate::input::{CursorMove, DummyInput, Input, OnelineInput};
+use crate::input::{dummy_input::DummyInput, oneline_input::OnelineInput, CursorMove, Input};
 use crate::tmux::{select_tmux_panel, Direction};
 
 #[derive(Default, PartialEq)]
