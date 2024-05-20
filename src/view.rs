@@ -80,7 +80,8 @@ pub fn view(f: &mut Frame, model: &mut Model) {
             }
         }
         Panel::Output => {
-            let (scroll_row, scroll_col) = model.output_input.viewport.scroll_top();
+            //let (scroll_row, scroll_col) = model.output_input.viewport.scroll_top();
+            let (scroll_row, scroll_col) = (0, 0);
             let (row, col) = model.output_input.cursor();
             (
                 col as u16 - scroll_col + 1,
@@ -127,7 +128,7 @@ fn url_block(model: &mut Model) -> impl Widget + '_ {
         .borders(Borders::ALL)
         .border_style(style);
 
-    Paragraph::new(model.new_url_input.value()).block(url_block)
+    Paragraph::new(model.url_input.value()).block(url_block)
 }
 
 fn input_block(model: &Model, field_width: usize) -> Table {
@@ -150,12 +151,12 @@ fn input_block(model: &Model, field_width: usize) -> Table {
             AuthFormat::Basic => {
                 let (username, password) = match model.current_input_field {
                     InputField::Key => (
-                        wrap_string(&model.auth.basic_input.key.lines()[0], field_width),
-                        truncate_ellipse(&model.auth.basic_input.value.lines()[0], field_width),
+                        wrap_string(&model.auth.basic_input.key.value(), field_width),
+                        truncate_ellipse(&model.auth.basic_input.value.value(), field_width),
                     ),
                     InputField::Value => (
-                        truncate_ellipse(&model.auth.basic_input.key.lines()[0], field_width),
-                        wrap_string(&model.auth.basic_input.value.lines()[0], field_width),
+                        truncate_ellipse(&model.auth.basic_input.key.value(), field_width),
+                        wrap_string(&model.auth.basic_input.value.value(), field_width),
                     ),
                 };
                 let height =
@@ -169,7 +170,7 @@ fn input_block(model: &Model, field_width: usize) -> Table {
                 .block(input_block)
             }
             AuthFormat::Bearer => {
-                let token = wrap_string(&model.auth.bearer_input.lines()[0], (field_width + 1) * 2);
+                let token = wrap_string(&model.auth.bearer_input.value(), (field_width + 1) * 2);
                 let height = token.lines().count() as u16;
 
                 Table::new(
@@ -185,8 +186,8 @@ fn input_block(model: &Model, field_width: usize) -> Table {
             .iter()
             .enumerate()
             .map(|(i, input_row)| {
-                let key = &input_row.key.lines()[0];
-                let value = &input_row.value.lines()[0];
+                let key = &input_row.key.value();
+                let value = &input_row.value.value();
                 let (formatted_key, formatted_value) =
                     if model.current_panel == Panel::Input && model.input_index == i {
                         match model.current_input_field {
@@ -300,11 +301,7 @@ fn output_block(model: &mut Model) -> impl Widget + '_ {
         .borders(Borders::ALL)
         .border_style(style);
 
-    model.output_input.set_cursor_line_style(Style::default());
-    model.output_input.set_cursor_style(Style::default());
-    model.output_input.set_block(output_block);
-
-    model.output_input.widget()
+    Paragraph::new(model.output_input.value()).block(output_block)
 }
 
 fn mode_block(model: &Model) -> Paragraph {
