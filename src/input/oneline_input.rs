@@ -1,11 +1,12 @@
 use std::fmt;
 
-use super::{CursorMove, Input};
+use super::{next_word, prev_word, CursorMove, Input};
 
 #[derive(Default)]
 pub struct OnelineInput {
     value: String,
     cursor_col: usize,
+    selection_start: Option<usize>,
 }
 
 impl fmt::Display for OnelineInput {
@@ -19,6 +20,7 @@ impl From<&str> for OnelineInput {
         Self {
             value: item.into(),
             cursor_col: 0,
+            selection_start: None,
         }
     }
 }
@@ -28,6 +30,7 @@ impl From<String> for OnelineInput {
         Self {
             value: item,
             cursor_col: 0,
+            selection_start: None,
         }
     }
 }
@@ -38,57 +41,9 @@ impl Into<String> for OnelineInput {
     }
 }
 
-impl OnelineInput {
-    fn next_word(&self) -> Option<(usize, char)> {
-        let mut chars = self.value().char_indices();
-        let (_, c) = chars.nth(self.cursor().0)?;
-
-        if c.is_whitespace() {
-            chars.find(|(_, x)| !x.is_whitespace())
-        } else {
-            let mut whitespace = false;
-            chars.find(|(_, x)| {
-                if x.is_whitespace() {
-                    whitespace = true;
-                    false
-                } else {
-                    x.is_alphanumeric() != c.is_alphanumeric() || whitespace
-                }
-            })
-        }
-    }
-
-    fn prev_word(&self) -> Option<(usize, char)> {
-        if self.cursor().0 == 0 {
-            return None;
-        }
-
-        let mut chars = self
-            .value()
-            .char_indices()
-            .rev()
-            .skip(self.value().len().saturating_sub(self.cursor().0));
-        let mut target = chars.next()?;
-
-        let mut non_whitespace = !target.1.is_whitespace();
-        for (i, c) in chars {
-            if (non_whitespace && c.is_whitespace())
-                || (!target.1.is_whitespace() && c.is_alphanumeric() != target.1.is_alphanumeric())
-            {
-                break;
-            } else {
-                non_whitespace = non_whitespace || !c.is_whitespace();
-                target = (i, c);
-            }
-        }
-
-        Some(target)
-    }
-}
-
 impl Input for OnelineInput {
-    fn value(&self) -> &str {
-        &self.value
+    fn value(&self) -> String {
+        self.value.clone()
     }
 
     fn len(&self) -> usize {
@@ -104,14 +59,14 @@ impl Input for OnelineInput {
             CursorMove::NextChar => self.cursor_col = self.len().min(self.cursor_col + 1),
             CursorMove::PrevChar => self.cursor_col = self.cursor_col.saturating_sub(1),
             CursorMove::NextWord => {
-                self.cursor_col = match self.next_word() {
-                    Some((i, _)) => i,
+                self.cursor_col = match next_word(&self.value(), self.cursor_col) {
+                    Some(i) => i,
                     None => self.len(),
                 }
             }
             CursorMove::PrevWord => {
-                self.cursor_col = match self.prev_word() {
-                    Some((i, _)) => i,
+                self.cursor_col = match prev_word(&self.value(), self.cursor_col) {
+                    Some(i) => i,
                     None => 0,
                 }
             }
@@ -162,6 +117,14 @@ impl Input for OnelineInput {
 
         self.value.remove(byte_index);
     }
+
+    fn start_selection(&mut self) {
+        self.selection_start = Some(self.cursor_col);
+    }
+
+    fn cancel_selection(&mut self) {
+        self.selection_start = None;
+    }
 }
 
 #[cfg(test)]
@@ -175,6 +138,7 @@ mod tests {
             let mut input = OnelineInput {
                 value: "test".to_string(),
                 cursor_col: 0,
+                selection_start: None,
             };
             input.move_cursor(CursorMove::NextChar);
 
@@ -186,6 +150,7 @@ mod tests {
             let mut input = OnelineInput {
                 value: "test".to_string(),
                 cursor_col: 2,
+                selection_start: None,
             };
             input.move_cursor(CursorMove::PrevChar);
 
@@ -197,6 +162,7 @@ mod tests {
             let mut input = OnelineInput {
                 value: "hello $%^ world   ".to_string(),
                 cursor_col: 1,
+                selection_start: None,
             };
             input.move_cursor(CursorMove::NextWord);
             assert_eq!(input.cursor(), (6, 0));
@@ -215,6 +181,7 @@ mod tests {
             let mut input = OnelineInput {
                 value: "   hello $%^ world".to_string(),
                 cursor_col: 17,
+                selection_start: None,
             };
 
             input.move_cursor(CursorMove::PrevWord);
@@ -232,6 +199,7 @@ mod tests {
             let mut input = OnelineInput {
                 value: "".to_string(),
                 cursor_col: 5,
+                selection_start: None,
             };
             input.move_cursor(CursorMove::LineHead);
 
@@ -243,6 +211,7 @@ mod tests {
             let mut input = OnelineInput {
                 value: "test".to_string(),
                 cursor_col: 0,
+                selection_start: None,
             };
             input.move_cursor(CursorMove::LineEnd);
 
@@ -254,6 +223,7 @@ mod tests {
             let mut input = OnelineInput {
                 value: "".to_string(),
                 cursor_col: 5,
+                selection_start: None,
             };
             input.move_cursor(CursorMove::NextLine);
 
@@ -265,6 +235,7 @@ mod tests {
             let mut input = OnelineInput {
                 value: "".to_string(),
                 cursor_col: 5,
+                selection_start: None,
             };
             input.move_cursor(CursorMove::PrevLine);
 
@@ -280,6 +251,7 @@ mod tests {
             let mut input = OnelineInput {
                 value: "hello".to_string(),
                 cursor_col: 5,
+                selection_start: None,
             };
             input.insert_char(',');
 
@@ -291,6 +263,7 @@ mod tests {
             let mut input = OnelineInput {
                 value: "hello".to_string(),
                 cursor_col: 3,
+                selection_start: None,
             };
             input.insert_char('-');
 
@@ -306,6 +279,7 @@ mod tests {
             let mut input = OnelineInput {
                 value: "hello".to_string(),
                 cursor_col: 0,
+                selection_start: None,
             };
             input.delete_char();
 
@@ -317,6 +291,7 @@ mod tests {
             let mut input = OnelineInput {
                 value: "hello".to_string(),
                 cursor_col: 2,
+                selection_start: None,
             };
             input.delete_char();
 
@@ -332,6 +307,7 @@ mod tests {
             let mut input = OnelineInput {
                 value: "hello".to_string(),
                 cursor_col: 5,
+                selection_start: None,
             };
             input.delete_next_char();
 
@@ -343,6 +319,7 @@ mod tests {
             let mut input = OnelineInput {
                 value: "hello".to_string(),
                 cursor_col: 2,
+                selection_start: None,
             };
             input.delete_next_char();
 

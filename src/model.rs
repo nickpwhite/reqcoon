@@ -18,7 +18,10 @@ use ratatui::widgets::ListState;
 use regex::RegexBuilder;
 use reqwest::{blocking::Client, Method, Url};
 
-use crate::input::{dummy_input::DummyInput, oneline_input::OnelineInput, CursorMove, Input};
+use crate::input::{
+    dummy_input::DummyInput, multiline_readonly_input::MultilineReadonlyInput,
+    oneline_input::OnelineInput, CursorMove, Input,
+};
 use crate::tmux::{select_tmux_panel, Direction};
 
 #[derive(Default, PartialEq)]
@@ -170,7 +173,7 @@ pub struct Model {
     pub headers_input_table: NonEmpty<InputRow>,
     pub body_input_table: NonEmpty<InputRow>,
     pub output_row: usize,
-    pub output_input: OnelineInput,
+    pub output_input: MultilineReadonlyInput,
     pub message: String,
     pub exit: bool,
 }
@@ -193,7 +196,7 @@ impl Model {
             headers_input_table: nonempty![InputRow::default()],
             body_input_table: nonempty![InputRow::default()],
             output_row: 0,
-            output_input: OnelineInput::default(),
+            output_input: MultilineReadonlyInput::default(),
             message: String::default(),
             exit: false,
         }
@@ -264,7 +267,7 @@ impl Model {
             body_input_table: NonEmpty::from_vec(body_input)
                 .unwrap_or(nonempty![InputRow::default()]),
             output_row: 0,
-            output_input: OnelineInput::default(),
+            output_input: MultilineReadonlyInput::default(),
             message: String::default(),
             exit: false,
         })
@@ -364,11 +367,11 @@ impl Model {
 
     pub fn visual(&mut self) {
         self.current_mode = Mode::Visual;
-        //self.current_input_mut().start_selection();
+        self.current_input_mut().start_selection();
     }
 
     pub fn leave_visual(&mut self) {
-        //self.current_input_mut().cancel_selection();
+        self.current_input_mut().cancel_selection();
     }
 
     pub fn select_panel_left(&mut self) {
@@ -628,7 +631,7 @@ impl Model {
             Err(error) => format!("{:?}", error),
         };
 
-        self.output_input = OnelineInput::from(output);
+        self.output_input = MultilineReadonlyInput::from(output);
     }
 
     fn current_input(&self) -> &dyn Input {
