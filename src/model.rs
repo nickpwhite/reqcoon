@@ -487,6 +487,8 @@ impl Model {
 
         let cursor_move = match key_event.code {
             KeyCode::Char('h') | KeyCode::Left => Some(CursorMove::PrevChar),
+            KeyCode::Char('j') | KeyCode::Down => Some(CursorMove::NextLine),
+            KeyCode::Char('k') | KeyCode::Up => Some(CursorMove::PrevLine),
             KeyCode::Char('l') | KeyCode::Right => Some(CursorMove::NextChar),
             KeyCode::Char('b') => Some(CursorMove::PrevWord),
             KeyCode::Char('w') => Some(CursorMove::NextWord),

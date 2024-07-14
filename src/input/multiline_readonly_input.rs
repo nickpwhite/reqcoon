@@ -5,6 +5,8 @@ pub struct MultilineReadonlyInput {
     lines: Vec<String>,
     cursor_col: usize,
     cursor_row: usize,
+    scroll_offset_col: usize,
+    scroll_offset_row: usize,
     selection_start: Option<(usize, usize)>,
 }
 
@@ -20,6 +22,8 @@ impl From<String> for MultilineReadonlyInput {
             lines: item.split('\n').map(str::to_string).collect(),
             cursor_col: 0,
             cursor_row: 0,
+            scroll_offset_col: 0,
+            scroll_offset_row: 0,
             selection_start: None,
         }
     }
@@ -42,8 +46,14 @@ impl Input for MultilineReadonlyInput {
         match cursor_move {
             CursorMove::NextChar => self.cursor_col = self.len().min(self.cursor_col + 1),
             CursorMove::PrevChar => self.cursor_col = self.cursor_col.saturating_sub(1),
-            CursorMove::NextLine => self.cursor_row = self.lines.len().min(self.cursor_row + 1),
-            CursorMove::PrevLine => self.cursor_row = self.cursor_row.saturating_sub(1),
+            CursorMove::NextLine => {
+                self.cursor_row = (self.lines.len() - 1).min(self.cursor_row + 1);
+                self.cursor_col = self.len().min(self.cursor_col)
+            }
+            CursorMove::PrevLine => {
+                self.cursor_row = self.cursor_row.saturating_sub(1);
+                self.cursor_col = self.len().min(self.cursor_col)
+            }
             CursorMove::NextWord => match next_word(self.current_line(), self.cursor_col) {
                 Some(i) => self.cursor_col = i,
                 None => {
@@ -91,6 +101,21 @@ impl Input for MultilineReadonlyInput {
                 self.cursor_row = self.lines.len() - 1;
             }
         }
+    }
+
+    fn scroll_offset(&self) -> (usize, usize) {
+        (self.scroll_offset_col, self.scroll_offset_row)
+    }
+
+    fn scroll(&mut self, cols: isize, rows: isize) {
+        self.scroll_offset_col = self
+            .scroll_offset_col
+            .saturating_add(cols as usize)
+            .min(self.len());
+        self.scroll_offset_row = self
+            .scroll_offset_row
+            .saturating_add(rows as usize)
+            .min(self.lines.len());
     }
 
     fn insert_newline(&mut self) {}

@@ -23,6 +23,8 @@ pub trait Input {
     fn len(&self) -> usize;
     fn cursor(&self) -> (usize, usize);
     fn move_cursor(&mut self, cursor_move: CursorMove);
+    fn scroll_offset(&self) -> (usize, usize);
+    fn scroll(&mut self, cols: isize, lines: isize);
     fn insert_newline(&mut self);
     fn insert_char(&mut self, character: char);
     fn delete_char(&mut self);
@@ -52,6 +54,11 @@ pub trait Input {
                 ..
             } => self.delete_char(),
             KeyEvent {
+                code: KeyCode::Delete,
+                modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
+                ..
+            } => self.delete_next_char(),
+            KeyEvent {
                 code: KeyCode::Left,
                 modifiers: KeyModifiers::NONE,
                 ..
@@ -75,12 +82,12 @@ pub trait Input {
                 code: KeyCode::Home,
                 modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
                 ..
-            } => self.move_cursor(CursorMove::LineHead),
+            } => self.move_cursor(CursorMove::Head),
             KeyEvent {
                 code: KeyCode::End,
                 modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
                 ..
-            } => self.move_cursor(CursorMove::LineEnd),
+            } => self.move_cursor(CursorMove::End),
             _ => (),
         }
     }

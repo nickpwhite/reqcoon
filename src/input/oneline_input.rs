@@ -6,6 +6,7 @@ use super::{next_word, prev_word, CursorMove, Input};
 pub struct OnelineInput {
     value: String,
     cursor_col: usize,
+    scroll_offset_col: usize,
     selection_start: Option<usize>,
 }
 
@@ -20,6 +21,7 @@ impl From<&str> for OnelineInput {
         Self {
             value: item.into(),
             cursor_col: 0,
+            scroll_offset_col: 0,
             selection_start: None,
         }
     }
@@ -30,6 +32,7 @@ impl From<String> for OnelineInput {
         Self {
             value: item,
             cursor_col: 0,
+            scroll_offset_col: 0,
             selection_start: None,
         }
     }
@@ -74,6 +77,17 @@ impl Input for OnelineInput {
             CursorMove::LineEnd | CursorMove::End => self.cursor_col = self.len(),
             CursorMove::NextLine | CursorMove::PrevLine => (),
         }
+    }
+
+    fn scroll_offset(&self) -> (usize, usize) {
+        (self.scroll_offset_col, 0)
+    }
+
+    fn scroll(&mut self, cols: isize, _rows: isize) {
+        self.scroll_offset_col = self
+            .scroll_offset_col
+            .saturating_add(cols as usize)
+            .min(self.len());
     }
 
     fn insert_newline(&mut self) {}

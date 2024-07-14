@@ -80,12 +80,11 @@ pub fn view(f: &mut Frame, model: &mut Model) {
             }
         }
         Panel::Output => {
-            //let (scroll_row, scroll_col) = model.output_input.viewport.scroll_top();
-            let (scroll_row, scroll_col) = (0, 0);
-            let (row, col) = model.output_input.cursor();
+            let (scroll_row, scroll_col) = model.output_input.scroll_offset();
+            let (col, row) = model.output_input.cursor();
             (
-                col as u16 - scroll_col + 1,
-                row as u16 - scroll_row + output_section.y + 1,
+                (col - scroll_col + 1) as u16,
+                (row - scroll_row) as u16 + output_section.y + 1,
             )
         }
     };
@@ -301,7 +300,11 @@ fn output_block(model: &mut Model) -> impl Widget + '_ {
         .borders(Borders::ALL)
         .border_style(style);
 
-    Paragraph::new(model.output_input.value()).block(output_block)
+    let scroll_offset = model.output_input.scroll_offset();
+
+    Paragraph::new(model.output_input.value())
+        .scroll((scroll_offset.1 as u16, scroll_offset.0 as u16))
+        .block(output_block)
 }
 
 fn mode_block(model: &Model) -> Paragraph {

@@ -14,6 +14,10 @@ impl Input for DummyInput {
         (usize::default(), usize::default())
     }
     fn move_cursor(&mut self, _cursor_move: CursorMove) {}
+    fn scroll_offset(&self) -> (usize, usize) {
+        (usize::default(), usize::default())
+    }
+    fn scroll(&mut self, _cols: isize, _rows: isize) {}
     fn insert_newline(&mut self) {}
     fn insert_char(&mut self, _character: char) {}
     fn delete_char(&mut self) {}
