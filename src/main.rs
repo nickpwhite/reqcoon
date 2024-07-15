@@ -134,10 +134,6 @@ fn handle_insert_key(key: KeyEvent) -> Option<Message> {
         KeyEvent {
             code: KeyCode::Esc, ..
         } => Some(Message::LeaveInsert),
-        KeyEvent {
-            code: KeyCode::Enter,
-            ..
-        } => Some(Message::SubmitRequest),
         _ => Some(Message::InsertInput(key)),
     }
 }

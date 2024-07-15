@@ -36,11 +36,16 @@ pub fn view(f: &mut Frame, model: &mut Model) {
     f.render_widget(mode_block(model), statusbar_section);
 
     let mut table_state = TableState::default().with_selected(model.input_index);
-    f.render_stateful_widget(
-        input_block(model, input_field_width as usize),
-        input_section,
-        &mut table_state,
-    );
+    match (model.current_input_type, model.current_body_format) {
+        (InputType::Body, BodyFormat::Json) => {
+            f.render_widget(json_input_block(model), input_section);
+        }
+        _ => f.render_stateful_widget(
+            input_block(model, input_field_width as usize),
+            input_section,
+            &mut table_state,
+        ),
+    }
 
     let (col, row) = match model.current_panel {
         Panel::Method => (model.method_cursor_position(), 1),
@@ -69,6 +74,14 @@ pub fn view(f: &mut Frame, model: &mut Model) {
                         input_section.y + 4 + input_row,
                     ),
                 },
+                InputType::Body if model.current_body_format == BodyFormat::Json => {
+                    let (scroll_row, scroll_col) = model.json_body_input.viewport.scroll_top();
+                    let (row, col) = model.json_body_input.cursor();
+                    (
+                        col as u16 - scroll_col + 1,
+                        row as u16 - scroll_row + input_section.y + 1,
+                    )
+                }
                 InputType::Headers | InputType::Body => (
                     start_col + model.cursor_col() % field_width,
                     (model.input_index - table_state.offset()) as u16
@@ -220,6 +233,28 @@ fn input_block(model: &Model, field_width: usize) -> Table {
             .block(input_block)
             .header(Row::new(vec!["Key", "Value"]).bottom_margin(1)),
     }
+}
+
+fn json_input_block(model: &mut Model) -> impl Widget + '_ {
+    let style = if model.current_panel == Panel::Input {
+        active_style()
+    } else {
+        Style::default()
+    };
+
+    let input_block = Block::default()
+        .title(input_title(model))
+        .title_bottom(input_footer(model))
+        .borders(Borders::ALL)
+        .border_style(style);
+
+    model
+        .json_body_input
+        .set_cursor_line_style(Style::default());
+    model.json_body_input.set_cursor_style(Style::default());
+    model.json_body_input.set_block(input_block);
+
+    model.json_body_input.widget()
 }
 
 fn input_title(model: &Model) -> Line<'static> {

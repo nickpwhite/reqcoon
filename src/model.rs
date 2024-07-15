@@ -9,12 +9,10 @@ use clippers::Clipboard;
 use crossterm::event::{KeyCode, KeyEvent};
 use enum_iterator::Sequence;
 use http_auth_basic::Credentials;
-use json::JsonValue;
 use log::error;
 use nonempty::{nonempty, NonEmpty};
 use pest::Parser;
 use pest_derive::Parser;
-use ratatui::widgets::ListState;
 use regex::RegexBuilder;
 use reqwest::{blocking::Client, Method, Url};
 use tui_textarea::{CursorMove, TextArea};
@@ -48,7 +46,7 @@ pub enum Panel {
     Output,
 }
 
-#[derive(Default, PartialEq, Sequence)]
+#[derive(Clone, Copy, Default, PartialEq, Sequence)]
 pub enum InputType {
     #[default]
     Auth,
@@ -84,7 +82,7 @@ impl fmt::Display for AuthFormat {
     }
 }
 
-#[derive(Default, Sequence)]
+#[derive(Clone, Copy, Default, PartialEq, Sequence)]
 pub enum BodyFormat {
     #[default]
     Json,
@@ -163,7 +161,6 @@ pub struct Model {
     pub filename: String,
     pub current_mode: Mode,
     pub current_panel: Panel,
-    pub list_state: ListState,
     pub current_method: Method,
     pub dummy_input: TextArea<'static>,
     pub url_input: TextArea<'static>,
@@ -174,7 +171,7 @@ pub struct Model {
     pub input_index: usize,
     pub headers_input_table: NonEmpty<InputRow>,
     pub body_input_table: NonEmpty<InputRow>,
-    pub output_row: usize,
+    pub json_body_input: TextArea<'static>,
     pub output_input: TextArea<'static>,
     pub message: String,
     pub exit: bool,
@@ -186,7 +183,6 @@ impl Model {
             filename,
             current_mode: Mode::default(),
             current_panel: Panel::default(),
-            list_state: ListState::default().with_selected(Some(0)),
             current_method: Method::GET,
             dummy_input: TextArea::default(),
             url_input: TextArea::default(),
@@ -197,7 +193,7 @@ impl Model {
             input_index: 0,
             headers_input_table: nonempty![InputRow::default()],
             body_input_table: nonempty![InputRow::default()],
-            output_row: 0,
+            json_body_input: TextArea::default(),
             output_input: TextArea::default(),
             message: String::default(),
             exit: false,
@@ -212,7 +208,7 @@ impl Model {
         let mut method = Method::GET;
         let mut uri = "";
         let mut headers_input = vec![];
-        let mut body_input = vec![];
+        let mut json_body_input = String::default();
 
         let pairs = RequestParser::parse(Rule::request, &input)?;
         for pair in pairs {
@@ -238,12 +234,7 @@ impl Model {
                 }
                 Rule::body => {
                     let object = json::parse(pair.as_str())?;
-                    for (key, value) in object.entries() {
-                        body_input.push(InputRow {
-                            key: [key].into(),
-                            value: [value.as_str().unwrap()].into(),
-                        })
-                    }
+                    json_body_input = json::stringify_pretty(object, 4);
                 }
                 _ => (),
             }
@@ -255,7 +246,6 @@ impl Model {
             filename,
             current_mode: Mode::default(),
             current_panel: Panel::default(),
-            list_state: ListState::default().with_selected(Some(0)),
             current_method: method,
             dummy_input: TextArea::default(),
             url_input: TextArea::from([uri]),
@@ -266,9 +256,8 @@ impl Model {
             input_index: 0,
             headers_input_table: NonEmpty::from_vec(headers)
                 .unwrap_or(nonempty![InputRow::default()]),
-            body_input_table: NonEmpty::from_vec(body_input)
-                .unwrap_or(nonempty![InputRow::default()]),
-            output_row: 0,
+            body_input_table: nonempty![InputRow::default()],
+            json_body_input: TextArea::from(json_body_input.lines()),
             output_input: TextArea::default(),
             message: String::default(),
             exit: false,
@@ -469,18 +458,10 @@ impl Model {
     }
 
     pub fn handle_insert_input(&mut self, event: KeyEvent) {
-        if self.current_input_type == InputType::Auth && self.auth.format == AuthFormat::None {
-            return;
-        }
-
         self.current_input_mut().input(event);
     }
 
     pub fn handle_normal_input(&mut self, key_event: KeyEvent) {
-        if self.current_input_type == InputType::Auth && self.auth.format == AuthFormat::None {
-            return;
-        }
-
         let cursor_move = match key_event.code {
             KeyCode::Char('h') | KeyCode::Left => Some(CursorMove::Back),
             KeyCode::Char('l') | KeyCode::Right => Some(CursorMove::Forward),
@@ -488,12 +469,10 @@ impl Model {
             KeyCode::Char('w') => Some(CursorMove::WordForward),
             KeyCode::Char('^') | KeyCode::Home => Some(CursorMove::Head),
             KeyCode::Char('$') | KeyCode::End => Some(CursorMove::End),
-            KeyCode::Char('j') | KeyCode::Down if self.current_panel == Panel::Output => {
+            KeyCode::Char('j') | KeyCode::Down if self.is_multiline_input() => {
                 Some(CursorMove::Down)
             }
-            KeyCode::Char('k') | KeyCode::Up if self.current_panel == Panel::Output => {
-                Some(CursorMove::Up)
-            }
+            KeyCode::Char('k') | KeyCode::Up if self.is_multiline_input() => Some(CursorMove::Up),
             _ => None,
         };
 
@@ -609,6 +588,12 @@ impl Model {
         let url = Url::parse(&self.url_input.lines()[0]).expect("Invalid URL");
         let mut request_builder = Client::new().request(self.current_method.clone(), url);
 
+        request_builder = match self.current_body_format {
+            BodyFormat::Json => request_builder
+                .header("Content-Type", "application/json")
+                .body(self.json_body_input.lines().join("\n")),
+            BodyFormat::Form => request_builder.form(&self.body_hash_map()),
+        };
         request_builder = match self.auth.format {
             AuthFormat::None => request_builder,
             AuthFormat::Basic => {
@@ -621,10 +606,6 @@ impl Model {
             .fold(request_builder, |builder, InputRow { key, value }| {
                 builder.header(&key.lines()[0], &value.lines()[0])
             });
-        request_builder = match self.current_body_format {
-            BodyFormat::Json => request_builder.json(&self.body_hash_map()),
-            BodyFormat::Form => request_builder.form(&self.body_hash_map()),
-        };
 
         let output = match request_builder.send() {
             Ok(response) => response
@@ -671,6 +652,9 @@ impl Model {
                     },
                     AuthFormat::Bearer => &mut self.auth.bearer_input,
                 },
+                InputType::Body if self.current_body_format == BodyFormat::Json => {
+                    &mut self.json_body_input
+                }
                 InputType::Headers | InputType::Body => match self.current_input_field {
                     InputField::Key => &mut self.current_input_row_mut().key,
                     InputField::Value => &mut self.current_input_row_mut().value,
@@ -734,19 +718,23 @@ impl Model {
 
     fn body_string(&self) -> String {
         match self.current_body_format {
-            BodyFormat::Json => JsonValue::Object(
-                self.non_empty_body()
-                    .map(|InputRow { key, value }| {
-                        (key.lines()[0].clone(), value.lines()[0].clone())
-                    })
-                    .collect(),
-            )
-            .dump(),
-            BodyFormat::Form => "".to_string(),
+            BodyFormat::Json => self.json_body_input.lines().join("\n"),
+            BodyFormat::Form => self
+                .non_empty_body()
+                .map(|InputRow { key, value }| format!("{}={}", key.lines()[0], value.lines()[0]))
+                .collect::<Vec<String>>()
+                .join("&"),
         }
     }
 
     fn body_hash_map(&self) -> HashMap<String, String> {
         self.non_empty_body().map(|row| row.into()).collect()
+    }
+
+    fn is_multiline_input(&self) -> bool {
+        (self.current_panel == Panel::Input
+            && self.current_input_type == InputType::Body
+            && self.current_body_format == BodyFormat::Json)
+            || self.current_panel == Panel::Output
     }
 }
