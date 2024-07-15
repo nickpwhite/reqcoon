@@ -1,0 +1,3 @@
+[submodule "tui-textarea"]
+	path = tui-textarea
+	url = git@github.com:nickpwhite/tui-textarea.git
