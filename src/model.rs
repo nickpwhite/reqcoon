@@ -8,18 +8,18 @@ use std::str;
 use clippers::Clipboard;
 use crossterm::event::{KeyCode, KeyEvent};
 use enum_iterator::Sequence;
-use http_auth_basic::Credentials;
-use log::error;
 use nonempty::{nonempty, NonEmpty};
-use pest::Parser;
-use pest_derive::Parser;
-use regex::RegexBuilder;
-use reqwest::{blocking::Client, Method, Url};
+use reqwest::{blocking::Client, Url};
+use serde::{
+    ser::{SerializeStruct, Serializer},
+    Serialize,
+};
+use serde_json::Value;
 use tui_textarea::{CursorMove, TextArea};
 
 use crate::tmux::{select_tmux_panel, Direction};
 
-#[derive(Default, PartialEq)]
+#[derive(Default, PartialEq, Serialize)]
 pub enum Mode {
     #[default]
     Normal,
@@ -37,7 +37,7 @@ impl fmt::Display for Mode {
     }
 }
 
-#[derive(Default, PartialEq, Sequence)]
+#[derive(Default, PartialEq, Sequence, Serialize)]
 pub enum Panel {
     #[default]
     Method,
@@ -46,7 +46,7 @@ pub enum Panel {
     Output,
 }
 
-#[derive(Clone, Copy, Default, PartialEq, Sequence)]
+#[derive(Clone, Copy, Default, PartialEq, Sequence, Serialize)]
 pub enum InputType {
     #[default]
     Auth,
@@ -64,7 +64,7 @@ impl fmt::Display for InputType {
     }
 }
 
-#[derive(Default, PartialEq, Sequence)]
+#[derive(Default, PartialEq, Sequence, Serialize)]
 pub enum AuthFormat {
     #[default]
     None,
@@ -82,7 +82,18 @@ impl fmt::Display for AuthFormat {
     }
 }
 
-#[derive(Clone, Copy, Default, PartialEq, Sequence)]
+impl From<&str> for AuthFormat {
+    fn from(string: &str) -> Self {
+        match string {
+            "None" => AuthFormat::None,
+            "Basic" => AuthFormat::Basic,
+            "Bearer" => AuthFormat::Bearer,
+            _ => AuthFormat::default(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Sequence, Serialize)]
 pub enum BodyFormat {
     #[default]
     Json,
@@ -98,23 +109,17 @@ impl fmt::Display for BodyFormat {
     }
 }
 
-#[derive(Default, PartialEq, Sequence)]
+#[derive(Default, PartialEq, Sequence, Serialize)]
 pub enum InputField {
     #[default]
     Key,
     Value,
 }
 
-#[derive(Default)]
+#[derive(Default, Serialize)]
 pub struct InputRow {
     pub key: TextArea<'static>,
     pub value: TextArea<'static>,
-}
-
-impl InputRow {
-    fn is_empty(&self) -> bool {
-        self.key.is_empty() && self.value.is_empty()
-    }
 }
 
 impl Into<(String, String)> for &InputRow {
@@ -126,7 +131,13 @@ impl Into<(String, String)> for &InputRow {
     }
 }
 
-#[derive(Default)]
+impl InputRow {
+    fn is_empty(&self) -> bool {
+        self.key.is_empty() && self.value.is_empty()
+    }
+}
+
+#[derive(Default, Serialize)]
 pub struct Auth {
     pub format: AuthFormat,
     pub basic_input: InputRow,
@@ -153,9 +164,75 @@ impl Auth {
     }
 }
 
-#[derive(Parser)]
-#[grammar = "http.pest"]
-struct RequestParser;
+#[derive(Clone, Default, Serialize)]
+pub enum Method {
+    OPTIONS,
+    #[default]
+    GET,
+    HEAD,
+    POST,
+    PUT,
+    PATCH,
+    DELETE,
+    TRACE,
+    CONNECT,
+}
+
+impl fmt::Display for Method {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.to_string())
+    }
+}
+
+impl From<&str> for Method {
+    fn from(method: &str) -> Self {
+        match method {
+            "OPTIONS" => Method::OPTIONS,
+            "GET" => Method::GET,
+            "HEAD" => Method::HEAD,
+            "POST" => Method::POST,
+            "PUT" => Method::PUT,
+            "PATCH" => Method::PATCH,
+            "DELETE" => Method::DELETE,
+            "TRACE" => Method::TRACE,
+            "CONNECT" => Method::CONNECT,
+            _ => Method::default(),
+        }
+    }
+}
+
+impl Into<reqwest::Method> for Method {
+    fn into(self) -> reqwest::Method {
+        match self {
+            Method::OPTIONS => reqwest::Method::OPTIONS,
+            Method::GET => reqwest::Method::GET,
+            Method::HEAD => reqwest::Method::HEAD,
+            Method::POST => reqwest::Method::POST,
+            Method::PUT => reqwest::Method::PUT,
+            Method::PATCH => reqwest::Method::PATCH,
+            Method::DELETE => reqwest::Method::DELETE,
+            Method::TRACE => reqwest::Method::TRACE,
+            Method::CONNECT => reqwest::Method::CONNECT,
+        }
+    }
+}
+
+impl Method {
+    pub fn to_string(&self) -> String {
+        match self {
+            Method::OPTIONS => "OPTIONS",
+            Method::GET => "GET",
+            Method::HEAD => "HEAD",
+            Method::POST => "POST",
+            Method::PUT => "PUT",
+            Method::PATCH => "PATCH",
+            Method::DELETE => "DELETE",
+            Method::TRACE => "TRACE",
+            Method::CONNECT => "CONNECT",
+        }
+        .to_string()
+    }
+}
 
 pub struct Model {
     pub filename: String,
@@ -175,6 +252,22 @@ pub struct Model {
     pub output_input: TextArea<'static>,
     pub message: String,
     pub exit: bool,
+}
+
+impl Serialize for Model {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut state = serializer.serialize_struct("Model", 6)?;
+        state.serialize_field("current_method", &self.current_method)?;
+        state.serialize_field("url_input", &self.url_input)?;
+        state.serialize_field("auth", &self.auth)?;
+        state.serialize_field("headers_input_table", &self.headers_input_table)?;
+        state.serialize_field("body_input_table", &self.body_input_table)?;
+        state.serialize_field("json_body_input", &self.json_body_input)?;
+        state.end()
+    }
 }
 
 impl Model {
@@ -205,138 +298,95 @@ impl Model {
         let mut file = File::open(filename.clone())?;
         file.read_to_string(&mut input)?;
 
-        let mut method = Method::GET;
-        let mut uri = "";
-        let mut headers_input = vec![];
-        let mut json_body_input = String::default();
+        let json_model: Value = serde_json::from_str(&input)?;
 
-        let pairs = RequestParser::parse(Rule::request, &input)?;
-        for pair in pairs {
-            match pair.as_rule() {
-                Rule::method => method = Method::from_bytes(pair.as_str().as_bytes())?,
-                Rule::uri => uri = pair.as_str(),
-                Rule::headers => {
-                    for header in pair.into_inner() {
-                        let mut key = "";
-                        let mut value = "";
-                        for inner_rule in header.into_inner() {
-                            match inner_rule.as_rule() {
-                                Rule::header_name => key = inner_rule.as_str(),
-                                Rule::header_value => value = inner_rule.as_str(),
-                                _ => (),
-                            }
-                        }
-                        headers_input.push(InputRow {
-                            key: [key].into(),
-                            value: [value].into(),
-                        });
-                    }
+        let auth = Auth {
+            format: json_model["auth"]["format"].as_str().unwrap().into(),
+            basic_input: InputRow {
+                key: TextArea::from(
+                    json_model["auth"]["basic_input"]["key"]
+                        .as_str()
+                        .unwrap()
+                        .lines(),
+                ),
+                value: TextArea::from(
+                    json_model["auth"]["basic_input"]["value"]
+                        .as_str()
+                        .unwrap()
+                        .lines(),
+                ),
+            },
+            bearer_input: TextArea::from(
+                json_model["auth"]["bearer_input"].as_str().unwrap().lines(),
+            ),
+        };
+
+        let headers_input_table = match json_model["headers_input_table"].as_array() {
+            Some(headers) => {
+                let headers_vec = headers
+                    .iter()
+                    .map(|header| InputRow {
+                        key: TextArea::from(header["key"].as_str().unwrap().lines()),
+                        value: TextArea::from(header["value"].as_str().unwrap().lines()),
+                    })
+                    .collect::<Vec<InputRow>>();
+
+                if headers_vec.len() > 0 {
+                    NonEmpty::from_vec(headers_vec).unwrap()
+                } else {
+                    nonempty![InputRow::default()]
                 }
-                Rule::body => {
-                    let object = json::parse(pair.as_str())?;
-                    json_body_input = json::stringify_pretty(object, 4);
-                }
-                _ => (),
             }
-        }
+            None => nonempty![InputRow::default()],
+        };
 
-        let (auth, headers) = Self::parse_headers_input(headers_input);
+        let body_input_table = match json_model["body_input_table"].as_array() {
+            Some(body_params) => {
+                let body_vec = body_params
+                    .iter()
+                    .map(|body_param| InputRow {
+                        key: TextArea::from(body_param["key"].as_str().unwrap().lines()),
+                        value: TextArea::from(body_param["value"].as_str().unwrap().lines()),
+                    })
+                    .collect::<Vec<InputRow>>();
+
+                if body_vec.len() > 0 {
+                    NonEmpty::from_vec(body_vec).unwrap()
+                } else {
+                    nonempty![InputRow::default()]
+                }
+            }
+            None => nonempty![InputRow::default()],
+        };
 
         Ok(Self {
             filename,
             current_mode: Mode::default(),
             current_panel: Panel::default(),
-            current_method: method,
+            current_method: json_model["current_method"].as_str().unwrap().into(),
             dummy_input: TextArea::default(),
-            url_input: TextArea::from([uri]),
-            auth,
+            url_input: json_model["url_input"].as_str().unwrap().lines().into(),
             current_input_type: InputType::default(),
             current_input_field: InputField::default(),
+            auth,
             current_body_format: BodyFormat::default(),
             input_index: 0,
-            headers_input_table: NonEmpty::from_vec(headers)
-                .unwrap_or(nonempty![InputRow::default()]),
-            body_input_table: nonempty![InputRow::default()],
-            json_body_input: TextArea::from(json_body_input.lines()),
+            headers_input_table,
+            body_input_table,
+            json_body_input: json_model["json_body_input"]
+                .as_str()
+                .unwrap()
+                .lines()
+                .into(),
             output_input: TextArea::default(),
             message: String::default(),
             exit: false,
         })
     }
 
-    fn parse_headers_input(mut headers_input: Vec<InputRow>) -> (Auth, Vec<InputRow>) {
-        match headers_input
-            .iter()
-            .position(|input_row| input_row.key.lines()[0] == "Authorization")
-        {
-            Some(index) => {
-                let re = RegexBuilder::new(r"(basic|bearer) (.*)")
-                    .case_insensitive(true)
-                    .build()
-                    .unwrap();
-                let auth_header = headers_input.remove(index);
-                match re.captures(&auth_header.value.lines()[0]) {
-                    Some(captures) => match captures[1].to_lowercase().as_str() {
-                        "basic" => {
-                            match Credentials::from_header(auth_header.value.lines()[0].clone()) {
-                                Ok(credentials) => (
-                                    Auth {
-                                        format: AuthFormat::Basic,
-                                        basic_input: InputRow {
-                                            key: TextArea::from(credentials.user_id.lines()),
-                                            value: TextArea::from(credentials.password.lines()),
-                                        },
-                                        bearer_input: TextArea::default(),
-                                    },
-                                    headers_input,
-                                ),
-                                Err(err) => {
-                                    error!("{:?}", err);
-                                    headers_input.insert(index, auth_header);
-                                    (Auth::default(), headers_input)
-                                }
-                            }
-                        }
-                        "bearer" => (
-                            Auth {
-                                format: AuthFormat::Bearer,
-                                basic_input: InputRow::default(),
-                                bearer_input: TextArea::from(captures[2].to_string().lines()),
-                            },
-                            headers_input,
-                        ),
-                        _ => {
-                            headers_input.insert(index, auth_header);
-                            (Auth::default(), headers_input)
-                        }
-                    },
-                    None => {
-                        headers_input.insert(index, auth_header);
-                        (Auth::default(), headers_input)
-                    }
-                }
-            }
-            None => (Auth::default(), headers_input),
-        }
-    }
-
     pub fn to_file(&self) -> io::Result<()> {
-        let mut output = format!("{} {}", self.current_method, self.url_input.lines()[0]);
-        if !self.auth_string().is_empty() {
-            output.push_str("\n");
-            output.push_str(&self.auth_string());
-        }
-        if !self.headers_string().is_empty() {
-            output.push_str("\n");
-            output.push_str(&self.headers_string());
-        }
-        if !self.body_string().is_empty() {
-            output.push_str("\n\n");
-            output.push_str(&self.body_string());
-        }
-        let mut file = File::create(&self.filename)?;
-
-        file.write_all(output.as_bytes())
+        let mut json_file = File::create(&self.filename)?;
+        json_file.write_all(serde_json::to_string_pretty(&self)?.as_bytes())
     }
 
     pub fn append(&mut self) {
@@ -422,7 +472,6 @@ impl Model {
             Method::DELETE => Method::TRACE,
             Method::TRACE => Method::CONNECT,
             Method::CONNECT => Method::OPTIONS,
-            _ => return,
         };
 
         self.current_method = new_method;
@@ -439,7 +488,6 @@ impl Model {
             Method::DELETE => Method::PATCH,
             Method::TRACE => Method::DELETE,
             Method::CONNECT => Method::TRACE,
-            _ => return,
         };
 
         self.current_method = new_method;
@@ -586,7 +634,7 @@ impl Model {
 
     pub fn submit_request(&mut self) {
         let url = Url::parse(&self.url_input.lines()[0]).expect("Invalid URL");
-        let mut request_builder = Client::new().request(self.current_method.clone(), url);
+        let mut request_builder = Client::new().request(self.current_method.clone().into(), url);
 
         request_builder = match self.current_body_format {
             BodyFormat::Json => request_builder
@@ -680,51 +728,16 @@ impl Model {
         &mut self.current_input_table_mut()[input_index]
     }
 
-    fn auth_string(&self) -> String {
-        match self.auth.format {
-            AuthFormat::None => String::default(),
-            AuthFormat::Basic => Credentials {
-                user_id: self.auth.username(),
-                password: self.auth.password().unwrap_or(String::default()),
-            }
-            .as_http_header(),
-            AuthFormat::Bearer => format!("Bearer {}", self.auth.token()),
-        }
-    }
-
     fn non_empty_headers(&self) -> impl Iterator<Item = &InputRow> {
         self.headers_input_table
             .iter()
             .filter(|header| !header.key.is_empty())
     }
 
-    fn headers_string(&self) -> String {
-        self.non_empty_headers()
-            .map(|input_row| {
-                format!(
-                    "{}: {}",
-                    input_row.key.lines()[0],
-                    input_row.value.lines()[0]
-                )
-            })
-            .collect()
-    }
-
     fn non_empty_body(&self) -> impl Iterator<Item = &InputRow> {
         self.body_input_table
             .iter()
             .filter(|body_pair| !body_pair.key.is_empty())
-    }
-
-    fn body_string(&self) -> String {
-        match self.current_body_format {
-            BodyFormat::Json => self.json_body_input.lines().join("\n"),
-            BodyFormat::Form => self
-                .non_empty_body()
-                .map(|InputRow { key, value }| format!("{}={}", key.lines()[0], value.lines()[0]))
-                .collect::<Vec<String>>()
-                .join("&"),
-        }
     }
 
     fn body_hash_map(&self) -> HashMap<String, String> {

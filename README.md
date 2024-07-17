@@ -3,7 +3,7 @@ Reqcoon is a TUI http client, useful for testing APIs and making HTTP requests.
 
 ## Getting Started
 1. To install, download the provided binary and put it in your PATH
-2. To run, run `reqcoon -f request.http` from a terminal
+2. To run, run `reqcoon -f request.json` from a terminal
 3. Navigate between panes with `Ctrl+h`/`Ctrl+j`/`Ctrl+k`/`Ctrl+l`, full keybindings below
 4. Enter a URL to make a request to
 
